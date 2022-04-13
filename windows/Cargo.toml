@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 flux = { version = "1", git = "https://github.com/sandydoo/flux", branch = "main" }
 glow = "0.11.2"
-glutin = "0.28.0"
+sdl2 = "0.35.2"
 
 # [patch."https://github.com/sandydoo/flux"]
 # flux = { version = "1", path = "../../flux/crates/flux" }

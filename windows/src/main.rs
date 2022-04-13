@@ -1,8 +1,7 @@
 use flux::{settings::*, *};
-use glutin::event::{Event, WindowEvent};
-use glutin::event_loop::{ControlFlow, EventLoop};
-use glutin::window::Window;
-use glutin::PossiblyCurrent;
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+use sdl2::video::GLProfile;
 use std::rc::Rc;
 
 const SETTINGS: Settings = Settings {
@@ -68,45 +67,44 @@ fn main() {
 }
 
 fn run_flux() {
-    let (gl, window, event_loop) = get_rendering_context();
+    let sdl_context = sdl2::init().unwrap();
+    let video_subsystem = sdl_context.video().unwrap();
+
+    let gl_attr = video_subsystem.gl_attr();
+    gl_attr.set_context_profile(GLProfile::Core);
+    gl_attr.set_context_version(3, 3);
+
+    let window = video_subsystem
+        .window("Window", 800, 600)
+        .opengl()
+        .build()
+        .unwrap();
+
+    let _ctx = window.gl_create_context().unwrap();
+    let gl = unsafe {
+        glow::Context::from_loader_function(|s| video_subsystem.gl_get_proc_address(s) as *const _)
+    };
     let mut flux = Flux::new(&Rc::new(gl), 800, 600, 800, 600, &Rc::new(SETTINGS)).unwrap();
 
+    let mut event_pump = sdl_context.event_pump().unwrap();
     let start = std::time::Instant::now();
 
-    event_loop.run(move |event, _, control_flow| {
-        let next_frame_time =
-            std::time::Instant::now() + std::time::Duration::from_nanos(16_666_667);
-        *control_flow = glutin::event_loop::ControlFlow::WaitUntil(next_frame_time);
-
-        match event {
-            Event::LoopDestroyed => {
-                return ();
+    'running: loop {
+        for event in event_pump.poll_iter() {
+            match event {
+                Event::Quit { .. }
+                | Event::KeyDown {
+                    keycode: Some(Keycode::Escape),
+                    ..
+                } => break 'running,
+                _ => {}
             }
-
-            Event::MainEventsCleared => {
-                window.window().request_redraw();
-            }
-
-            Event::RedrawRequested(_) => {}
-
-            Event::WindowEvent { ref event, .. } => {
-                use WindowEvent::*;
-                match event {
-                    MouseInput {
-                        button: glutin::event::MouseButton::Left,
-                        ..
-                    } => *control_flow = ControlFlow::Exit,
-
-                    _ => (),
-                }
-            }
-
-            _ => (),
         }
 
         flux.animate(start.elapsed().as_millis() as f32);
-        window.swap_buffers().unwrap();
-    });
+        window.gl_swap_window();
+        ::std::thread::sleep(::std::time::Duration::new(0, 1_000_000_000u32 / 60));
+    }
 }
 
 fn read_flags() -> Result<Mode, String> {
@@ -121,43 +119,11 @@ fn read_flags() -> Result<Mode, String> {
     }
 }
 
-pub fn get_rendering_context() -> (
-    glow::Context,
-    glutin::ContextWrapper<PossiblyCurrent, Window>,
-    EventLoop<()>,
-) {
-    let event_loop = glutin::event_loop::EventLoop::new();
-    let window_builder = glutin::window::WindowBuilder::new()
-        .with_title("Flux")
-        .with_fullscreen(Some(glutin::window::Fullscreen::Exclusive(
-            get_best_videomode(&event_loop.primary_monitor().unwrap()),
-        )));
-    let window = unsafe {
-        glutin::ContextBuilder::new()
-            .with_vsync(true)
-            .build_windowed(window_builder, &event_loop)
-            .unwrap()
-            .make_current()
-            .unwrap()
-    };
-    let gl =
-        unsafe { glow::Context::from_loader_function(|s| window.get_proc_address(s) as *const _) };
+// let sdl_context = sdl2::init()?;
+// let w: *mut sdl2_sys::SDL_Window =
+//     unsafe { sdl2_sys::SDL_CreateWindowFrom(parent as *const c_void) };
 
-    (gl, window, event_loop)
-}
-
-pub fn get_best_videomode(monitor: &glutin::monitor::MonitorHandle) -> glutin::monitor::VideoMode {
-    let mut modes = monitor.video_modes().collect::<Vec<_>>();
-    modes.sort_by(|a, b| {
-        use std::cmp::Ordering::*;
-        match b.size().width.cmp(&a.size().width) {
-            Equal => match b.size().height.cmp(&a.size().height) {
-                Equal => b.refresh_rate().cmp(&a.refresh_rate()),
-                default => default,
-            },
-            default => default,
-        }
-    });
-
-    modes.first().unwrap().clone()
-}
+// let window: sdl2::video::Window = {
+//     let video_subsystem = sdl_context.video()?;
+//     unsafe { sdl2::video::Window::from_ll(video_subsystem, w) }
+// };
