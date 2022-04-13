@@ -1,12 +1,11 @@
-use flux::settings::*;
-use flux::*;
+use flux::{settings::*, *};
 use glutin::event::{Event, WindowEvent};
 use glutin::event_loop::{ControlFlow, EventLoop};
 use glutin::window::Window;
 use glutin::PossiblyCurrent;
 use std::rc::Rc;
 
-const settings: Settings = Settings {
+const SETTINGS: Settings = Settings {
     viscosity: 1.0,
     velocity_dissipation: 0.0,
     starting_pressure: 0.8,
@@ -53,60 +52,66 @@ const settings: Settings = Settings {
     },
 };
 
-fn main() {
-    std::process::exit(match run() {
-        Ok(_) => 0,
-        Err(err) => {
-            print!("{}", err);
-            // (format!("{}", err).into());
-            1
-        }
-    });
+enum Mode {
+    Screensaver,
 }
 
-fn run() -> Result<(), String> {
-    match std::env::args().nth(1).as_mut().map(|s| s.as_str()) {
-        Some("/s") => {
-            let (gl, window, event_loop) = get_rendering_context();
-            let mut flux = Flux::new(&Rc::new(gl), 800, 600, 800, 600, &Rc::new(settings)).unwrap();
+fn main() {
+    match read_flags() {
+        Ok(Mode::Screensaver) => run_flux(),
 
-            let start = std::time::Instant::now();
+        Err(err) => {
+            print!("{}", err);
+            std::process::exit(1)
+        }
+    };
+}
 
-            event_loop.run(move |event, _, control_flow| {
-                let next_frame_time =
-                    std::time::Instant::now() + std::time::Duration::from_nanos(16_666_667);
-                *control_flow = glutin::event_loop::ControlFlow::WaitUntil(next_frame_time);
+fn run_flux() {
+    let (gl, window, event_loop) = get_rendering_context();
+    let mut flux = Flux::new(&Rc::new(gl), 800, 600, 800, 600, &Rc::new(SETTINGS)).unwrap();
 
+    let start = std::time::Instant::now();
+
+    event_loop.run(move |event, _, control_flow| {
+        let next_frame_time =
+            std::time::Instant::now() + std::time::Duration::from_nanos(16_666_667);
+        *control_flow = glutin::event_loop::ControlFlow::WaitUntil(next_frame_time);
+
+        match event {
+            Event::LoopDestroyed => {
+                return ();
+            }
+
+            Event::MainEventsCleared => {
+                window.window().request_redraw();
+            }
+
+            Event::RedrawRequested(_) => {}
+
+            Event::WindowEvent { ref event, .. } => {
+                use WindowEvent::*;
                 match event {
-                    Event::LoopDestroyed => {
-                        return;
-                    }
-
-                    Event::MainEventsCleared => {
-                        window.window().request_redraw();
-                    }
-
-                    Event::RedrawRequested(_) => {}
-
-                    Event::WindowEvent { ref event, .. } => {
-                        use WindowEvent::*;
-                        match event {
-                            MouseInput {
-                                button: glutin::event::MouseButton::Left,
-                                ..
-                            } => *control_flow = ControlFlow::Exit,
-
-                            _ => (),
-                        }
-                    }
+                    MouseInput {
+                        button: glutin::event::MouseButton::Left,
+                        ..
+                    } => *control_flow = ControlFlow::Exit,
 
                     _ => (),
                 }
+            }
 
-                flux.animate(start.elapsed().as_millis() as f32);
-                window.swap_buffers().unwrap();
-            });
+            _ => (),
         }
+
+        flux.animate(start.elapsed().as_millis() as f32);
+        window.swap_buffers().unwrap();
+    });
+}
+
+fn read_flags() -> Result<Mode, String> {
+    match std::env::args().nth(1).as_mut().map(|s| s.as_str()) {
+        Some("/s") => Ok(Mode::Screensaver),
         Some(s) => {
             return Err(format!("I don’t know what the argument {} is.", s));
         }
