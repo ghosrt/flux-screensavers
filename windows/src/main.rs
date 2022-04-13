@@ -91,7 +91,11 @@ fn run() -> Result<(), String> {
                     Event::WindowEvent { ref event, .. } => {
                         use WindowEvent::*;
                         match event {
-                            KeyboardInput { .. } => *control_flow = ControlFlow::Exit,
+                            MouseInput {
+                                button: glutin::event::MouseButton::Left,
+                                ..
+                            } => *control_flow = ControlFlow::Exit,
+
                             _ => (),
                         }
                     }
