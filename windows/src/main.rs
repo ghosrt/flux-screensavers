@@ -1,5 +1,6 @@
 use flux::settings::*;
 use flux::*;
+use glutin::event::{Event, WindowEvent};
 use glutin::event_loop::{ControlFlow, EventLoop};
 use glutin::window::Window;
 use glutin::PossiblyCurrent;
@@ -56,6 +57,7 @@ fn main() {
     std::process::exit(match run() {
         Ok(_) => 0,
         Err(err) => {
+            print!("{}", err);
             // (format!("{}", err).into());
             1
         }
@@ -66,8 +68,47 @@ fn run() -> Result<(), String> {
     match std::env::args().nth(1).as_mut().map(|s| s.as_str()) {
         Some("/s") => {
             let (gl, window, event_loop) = get_rendering_context();
-            Flux::new(&Rc::new(gl), 800, 600, 800, 600, &Rc::new(settings));
-            Ok(())
+            let mut flux = Flux::new(&Rc::new(gl), 800, 600, 800, 600, &Rc::new(settings)).unwrap();
+
+            let start = std::time::Instant::now();
+
+            event_loop.run(move |event, _, control_flow| {
+                let next_frame_time =
+                    std::time::Instant::now() + std::time::Duration::from_nanos(16_666_667);
+                *control_flow = glutin::event_loop::ControlFlow::WaitUntil(next_frame_time);
+
+                match event {
+                    Event::LoopDestroyed => {
+                        return;
+                    }
+
+                    Event::MainEventsCleared => {
+                        window.window().request_redraw();
+                    }
+
+                    Event::RedrawRequested(_) => {}
+
+                    Event::WindowEvent { ref event, .. } => match event {
+                        WindowEvent::Resized(physical_size) => {
+                            window.resize(*physical_size);
+                            let logical_size =
+                                physical_size.to_logical(window.window().scale_factor());
+                            flux.resize(
+                                logical_size.width,
+                                logical_size.height,
+                                physical_size.width,
+                                physical_size.height,
+                            );
+                        }
+                        WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                        _ => (),
+                    },
+                    _ => (),
+                }
+
+                flux.animate(start.elapsed().as_millis() as f32);
+                window.swap_buffers().unwrap();
+            });
         }
         Some(s) => {
             return Err(format!("I don’t know what the argument {} is.", s));
