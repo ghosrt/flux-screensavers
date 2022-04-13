@@ -88,21 +88,15 @@ fn run() -> Result<(), String> {
 
                     Event::RedrawRequested(_) => {}
 
-                    Event::WindowEvent { ref event, .. } => match event {
-                        WindowEvent::Resized(physical_size) => {
-                            window.resize(*physical_size);
-                            let logical_size =
-                                physical_size.to_logical(window.window().scale_factor());
-                            flux.resize(
-                                logical_size.width,
-                                logical_size.height,
-                                physical_size.width,
-                                physical_size.height,
-                            );
+                    Event::WindowEvent { ref event, .. } => {
+                        use WindowEvent::*;
+                        match event {
+                            KeyboardInput { .. } | MouseInput { .. } | CursorMoved { .. } => {
+                                *control_flow = ControlFlow::Exit
+                            }
+                            _ => (),
                         }
-                        WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                        _ => (),
-                    },
+                    }
                     _ => (),
                 }
 
