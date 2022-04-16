@@ -60,7 +60,7 @@ fn main() {
         Ok(Mode::Screensaver) => run_flux(),
 
         Err(err) => {
-            print!("{}", err);
+            println!("{}", err);
             std::process::exit(1)
         }
     };
@@ -72,19 +72,38 @@ fn run_flux() {
 
     let gl_attr = video_subsystem.gl_attr();
     gl_attr.set_context_profile(GLProfile::Core);
-    gl_attr.set_context_version(3, 3);
+    gl_attr.set_context_version(4, 6); // TODO
+
+    let display_mode = video_subsystem.current_display_mode(0).unwrap();
+    let physical_width = display_mode.w as u32;
+    let physical_height = display_mode.h as u32;
+    let (_, dpi, _) = video_subsystem.display_dpi(0).unwrap();
+    let logical_width = ((physical_width as f32) / dpi) as u32;
+    let logical_height = ((physical_height as f32) / dpi) as u32;
 
     let window = video_subsystem
-        .window("Window", 800, 600)
+        .window("Flux", physical_width, physical_height)
+        .fullscreen_desktop()
         .opengl()
         .build()
-        .unwrap();
+        .unwrap_or_else(|e| {
+            println!("{}", e.to_string());
+            std::process::exit(1)
+        });
 
     let _ctx = window.gl_create_context().unwrap();
     let gl = unsafe {
         glow::Context::from_loader_function(|s| video_subsystem.gl_get_proc_address(s) as *const _)
     };
-    let mut flux = Flux::new(&Rc::new(gl), 800, 600, 800, 600, &Rc::new(SETTINGS)).unwrap();
+    let mut flux = Flux::new(
+        &Rc::new(gl),
+        physical_width,
+        physical_height,
+        logical_width,
+        logical_height,
+        &Rc::new(SETTINGS),
+    )
+    .unwrap();
 
     let mut event_pump = sdl_context.event_pump().unwrap();
     let start = std::time::Instant::now();
