@@ -54,6 +54,8 @@ const SETTINGS: Settings = Settings {
     },
 };
 
+const BASE_DPI: u32 = 96;
+
 enum Mode {
     Screensaver,
 }
@@ -81,12 +83,16 @@ fn run_flux() {
     let physical_width = display_mode.w as u32;
     let physical_height = display_mode.h as u32;
     let (_, dpi, _) = video_subsystem.display_dpi(0).unwrap();
-    let logical_width = ((physical_width as f32) / dpi) as u32;
-    let logical_height = ((physical_height as f32) / dpi) as u32;
+    let scale_factor = dpi as f64 / BASE_DPI as f64;
+    let logical_width = (physical_width as f64 / scale_factor) as u32;
+    let logical_height = (physical_height as f64 / scale_factor) as u32;
+
+    // Debug scaling
+    println!("pw: {}, ph: {}, lw: {}, lh: {}, dpi: {}", physical_width, physical_height, logical_width, logical_height, dpi);
 
     let window = video_subsystem
         .window("Flux", physical_width, physical_height)
-        .fullscreen_desktop()
+        .fullscreen()
         .opengl()
         .build()
         .unwrap_or_else(|e| {
