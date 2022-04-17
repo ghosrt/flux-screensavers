@@ -1,3 +1,6 @@
+// Disable the console window that pops up when you launch the .exe 
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use flux::{settings::*, *};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
