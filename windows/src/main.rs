@@ -94,6 +94,9 @@ fn run_flux() {
             std::process::exit(1)
         });
 
+    // Hide mouse cursor
+    sdl_context.mouse().show_cursor(false);
+
     let _ctx = window.gl_create_context().unwrap();
     let gl = unsafe {
         glow::Context::from_loader_function(|s| video_subsystem.gl_get_proc_address(s) as *const _)
