@@ -1,13 +1,16 @@
 // Disable the console window that pops up when you launch the .exe
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use flux::{settings::*, *};
-use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
-use sdl2::video::GLProfile;
 use std::rc::Rc;
-use winapi::shared::windef::HWND;
-use core::ffi::c_void;
+use windows_sys::Win32::{
+    Foundation::{HWND, RECT},
+    UI::WindowsAndMessaging::GetClientRect,
+};
+use std::os::raw;
+use takeable_option::Takeable;
+use glutin::platform::windows::WindowExtWindows;
+use glutin::platform::windows::RawContextExt;
 
 const SETTINGS: Settings = Settings {
     viscosity: 1.0,
@@ -64,7 +67,9 @@ enum Mode {
 }
 
 fn main() {
-    env_logger::init();
+    let env = env_logger::Env::default()
+        .filter_or("MY_LOG_LEVEL", "debug");
+    env_logger::init_from_env(env);
 
     match read_flags() {
         Ok(Mode::Screensaver) => run_flux(None),
@@ -77,57 +82,63 @@ fn main() {
 }
 
 fn run_flux(window_handle: Option<HWND>) {
-    let sdl_context = sdl2::init().unwrap();
-    let video_subsystem = sdl_context.video().unwrap();
-
-    let gl_attr = video_subsystem.gl_attr();
-    gl_attr.set_context_profile(GLProfile::Core);
-    gl_attr.set_context_version(4, 6); // TODO
-
+    let event_loop = glutin::event_loop::EventLoop::new();
+    
     let (window, physical_width, physical_height) = {
         if let Some(parent_handle) = window_handle {
-            sdl2::hint::set("SDL_VIDEO_FOREIGN_WINDOW_OPENGL", "1");
-            let sdl_window: *mut sdl2_sys::SDL_Window = unsafe { sdl2_sys::SDL_CreateWindowFrom(parent_handle as *const c_void) };
-
-            if sdl_window.is_null() {
-                log::error!("Can’t create the preview window with the handle {:?}", parent_handle);
-                std::process::exit(1)
+            let mut rect: RECT = unsafe { std::mem::zeroed() };
+            if unsafe { GetClientRect(parent_handle, &mut rect) } == false.into() {
+                panic!("Unexpected GetClientRect failure: please report this error to https://github.com/rust-windowing/winit")
             }
+            let physical_width = (rect.right - rect.left) as u32;
+            let physical_height = (rect.bottom - rect.top) as u32;
 
-            let parent_window: sdl2::video::Window =
-                unsafe { sdl2::video::Window::from_ll(video_subsystem.clone(), sdl_window) };
-
-            let (physical_width, physical_height) = parent_window.size();
-
-            (parent_window, physical_width, physical_height)
+            (parent_handle as *mut raw::c_void, physical_width, physical_height)
         } else {
-            let display_mode = video_subsystem.current_display_mode(0).unwrap();
-            let physical_width = display_mode.w as u32;
-            let physical_height = display_mode.h as u32;
-            let window = video_subsystem
-                .window("Flux", physical_width, physical_height)
-                .fullscreen()
-                .opengl()
-                .build()
+            let window = glutin::window::WindowBuilder::new()
+                .with_title("Flux")
+                .with_fullscreen(Some(glutin::window::Fullscreen::Exclusive(
+                    get_best_videomode(&event_loop.primary_monitor().unwrap()),
+                )))
+                .build(&event_loop)
                 .unwrap_or_else(|e| {
                     log::error!("{}", e.to_string());
                     std::process::exit(1)
                 });
-            (window, physical_width, physical_height)
+
+            let (physical_width, physical_height): (u32, u32) = window.inner_size().into();
+
+            (window.hwnd(), physical_width, physical_height)
         }
     };
 
-    // Hide mouse cursor
-    sdl_context.mouse().show_cursor(false);
+    log::debug!("{}", physical_width);
 
-    let _ctx = window.gl_create_context().unwrap();
-    let gl = unsafe {
-        glow::Context::from_loader_function(|s| video_subsystem.gl_get_proc_address(s) as *const _)
+    let context = unsafe {
+        glutin::ContextBuilder::new()
+            .build_raw_context(window)
+            .unwrap_or_else(|e| {
+                log::error!("{:?}", e);
+                std::process::exit(1)
+            })
     };
-    let (_, dpi, _) = video_subsystem.display_dpi(0).unwrap();
-    let scale_factor = dpi as f64 / BASE_DPI as f64;
-    let logical_width = (physical_width as f64 / scale_factor) as u32;
-    let logical_height = (physical_height as f64 / scale_factor) as u32;
+    let context = unsafe {
+        context
+            .make_current()
+            .unwrap_or_else(|e| {
+                log::error!("{:?}", e);
+                std::process::exit(1)
+            })
+    };
+    let gl = unsafe {
+        glow::Context::from_loader_function(|s| context.get_proc_address(s) as *const _)
+    };
+    // let (_, dpi, _) = video_subsystem.display_dpi(0).unwrap();
+    // let scale_factor = dpi as f64 / BASE_DPI as f64;
+    // let logical_width = (physical_width as f64 / scale_factor) as u32;
+    // let logical_height = (physical_height as f64 / scale_factor) as u32;
+    let (logical_width, logical_height) = (physical_width, physical_height);
+    let dpi = 96.0;
     log::debug!(
         "pw: {}, ph: {}, lw: {}, lh: {}, dpi: {}",
         physical_width,
@@ -146,25 +157,35 @@ fn run_flux(window_handle: Option<HWND>) {
     )
     .unwrap();
 
-    let mut event_pump = sdl_context.event_pump().unwrap();
     let start = std::time::Instant::now();
+    let mut context = Takeable::new(context);
+    event_loop.run(move |event, _, control_flow| {
+        use glutin::event::{Event, WindowEvent};
+        use glutin::event_loop::ControlFlow;
 
-    'running: loop {
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } => break 'running,
-                _ => {}
+        let next_frame_time =
+            std::time::Instant::now() + std::time::Duration::from_nanos(16_666_667);
+        *control_flow = glutin::event_loop::ControlFlow::WaitUntil(next_frame_time);
+
+        log::debug!("{:?}", event);
+
+        match event {
+            Event::LoopDestroyed => {
+                Takeable::take(&mut context);
+                return;
             }
+
+            Event::WindowEvent { ref event, .. } => match event {
+                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                _ => ()
+            },
+
+            _ => (),
         }
 
         flux.animate(start.elapsed().as_millis() as f32);
-        window.gl_swap_window();
-        ::std::thread::sleep(::std::time::Duration::new(0, 1_000_000_000u32 / 60));
-    }
+        context.swap_buffers().unwrap();
+    });
 }
 
 fn read_flags() -> Result<Mode, String> {
@@ -185,5 +206,21 @@ fn read_flags() -> Result<Mode, String> {
             return Err(format!("{}", "You need to provide at least on flag."));
         }
     }
+}
+
+fn get_best_videomode(monitor: &glutin::monitor::MonitorHandle) -> glutin::monitor::VideoMode {
+    let mut modes = monitor.video_modes().collect::<Vec<_>>();
+    modes.sort_by(|a, b| {
+        use std::cmp::Ordering::*;
+        match b.size().width.cmp(&a.size().width) {
+            Equal => match b.size().height.cmp(&a.size().height) {
+                Equal => b.refresh_rate().cmp(&a.refresh_rate()),
+                default => default,
+            },
+            default => default,
+        }
+    });
+
+    modes.first().unwrap().clone()
 }
 

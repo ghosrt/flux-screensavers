@@ -8,16 +8,15 @@ env_logger = "0.9"
 flux = { version = "1", git = "https://github.com/sandydoo/flux", branch = "main" }
 glow = "0.11.2"
 log = "0.4.16"
-sdl2-sys = "0.35.2"
+glutin = "0.28.0"
+takeable-option = "0.4"
 
-[dependencies.sdl2]
-version = "0.35.2"
-default-features = false
-features = [ "static-link" ]
-
-[dependencies.winapi]
-version =  "0.3.9"
-features = [ "winuser" ]
+[dependencies.windows-sys]
+version =  "0.33"
+features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+]
 
 # [patch."https://github.com/sandydoo/flux"]
 # flux = { version = "1", path = "../../flux/crates/flux" }
