@@ -1,5 +1,5 @@
 // Disable the console window that pops up when you launch the .exe
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use flux::{settings::*, *};
 use sdl2::event::Event;
@@ -64,7 +64,10 @@ enum Mode {
 }
 
 fn main() {
-    env_logger::init();
+    let env = env_logger::Env::default()
+        .filter_or("MY_LOG_LEVEL", "debug");
+
+    env_logger::init_from_env(env);
 
     match read_flags() {
         Ok(Mode::Screensaver) => run_flux(None),
@@ -84,6 +87,8 @@ fn run_flux(window_handle: Option<HWND>) {
     gl_attr.set_context_profile(GLProfile::Core);
     gl_attr.set_context_version(4, 6); // TODO
 
+    let child_window: sdl2::video::Window;
+    let child_window_context: std::rc::Rc<sdl2::video::WindowContext>;
     let (window, physical_width, physical_height) = {
         if let Some(parent_handle) = window_handle {
             sdl2::hint::set("SDL_VIDEO_FOREIGN_WINDOW_OPENGL", "1");
@@ -97,6 +102,16 @@ fn run_flux(window_handle: Option<HWND>) {
             let parent_window: sdl2::video::Window =
                 unsafe { sdl2::video::Window::from_ll(video_subsystem.clone(), sdl_window) };
 
+            child_window = video_subsystem.window("Flux preview", 0, 0).position(0,0).borderless().hidden().build().unwrap();
+
+            if let Some(handle) = unsafe { get_window_handle_win32(child_window.raw()) } {
+                if unsafe { set_window_parent_win32(handle, parent_handle) } {
+                    // Will render into parent window directly
+                    // return Ok((parent_window, window.context()));
+                    log::debug!("Linked preview window");
+                    child_window_context = child_window.context();
+                }
+            }
             let (physical_width, physical_height) = parent_window.size();
 
             (parent_window, physical_width, physical_height)
@@ -151,12 +166,13 @@ fn run_flux(window_handle: Option<HWND>) {
 
     'running: loop {
         for event in event_pump.poll_iter() {
+            log::debug!("{:?}", event);
             match event {
                 Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } => break 'running,
+                | Event::Window { win_event: sdl2::event::WindowEvent::Close, .. }
+                | Event::KeyDown { .. }
+                | Event::MouseMotion { .. }
+                | Event::MouseButtonDown { .. } => break 'running,
                 _ => {}
             }
         }
@@ -187,3 +203,49 @@ fn read_flags() -> Result<Mode, String> {
     }
 }
 
+unsafe fn get_window_handle_win32(sdl_window: *mut sdl2_sys::SDL_Window) -> Option<HWND> {
+    use sdl2_sys::{SDL_GetWindowWMInfo, SDL_SysWMinfo, SDL_SysWMinfo__bindgen_ty_1, SDL_bool, SDL_version,
+                   SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL, SDL_SYSWM_TYPE};
+
+    let mut syswmi = SDL_SysWMinfo { version:   SDL_version { major: SDL_MAJOR_VERSION as u8,
+                                                              minor: SDL_MINOR_VERSION as u8,
+                                                              patch: SDL_PATCHLEVEL as u8, },
+                                     subsystem: SDL_SYSWM_TYPE::SDL_SYSWM_UNKNOWN,
+                                     info:      SDL_SysWMinfo__bindgen_ty_1 { dummy: [0; 64] }, };
+
+    match SDL_GetWindowWMInfo(sdl_window, &mut syswmi) {
+        SDL_bool::SDL_TRUE => {
+            assert!(syswmi.subsystem == SDL_SYSWM_TYPE::SDL_SYSWM_WINDOWS);
+            let handle: HWND = std::mem::transmute(syswmi.info.wl.display);
+            assert!(!handle.is_null());
+            Some(handle)
+        },
+        SDL_bool::SDL_FALSE => None,
+    }
+}
+
+unsafe fn set_window_parent_win32(handle: HWND, parent_handle: HWND) -> bool {
+    use winapi::um::winuser::{SetParent, GWL_STYLE, WS_CHILD, WS_POPUP};
+    if SetParent(handle, parent_handle).is_null() {
+        return false;
+    }
+    // Make this a child window so it will close when the parent dialog closes
+    #[cfg(target_arch = "x86_64")]
+    {
+        use winapi::shared::basetsd::LONG_PTR;
+        winapi::um::winuser::SetWindowLongPtrA(handle,
+                                               GWL_STYLE,
+                                               (winapi::um::winuser::GetWindowLongPtrA(handle, GWL_STYLE)
+                                                & !WS_POPUP as LONG_PTR)
+                                               | WS_CHILD as LONG_PTR);
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        use winapi::shared::ntdef::LONG;
+        winapi::um::winuser::SetWindowLongA(handle,
+                                            GWL_STYLE,
+                                            (winapi::um::winuser::GetWindowLongA(handle, GWL_STYLE) & !WS_POPUP as LONG)
+                                            | WS_CHILD as LONG);
+    }
+    true
+}
