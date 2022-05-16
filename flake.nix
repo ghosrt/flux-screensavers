@@ -11,7 +11,7 @@
       url = "github:nmattia/naersk";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-21.11";
   };
 
   outputs = { self, fenix, flake-utils, naersk, nixpkgs }:
@@ -75,13 +75,81 @@
               mv $out/bin/${name}.exe $out/bin/${name}.scr
             '';
           };
+
+          flux-screensaver-linux = naersk-lib.buildPackage rec {
+              name = "flux-screensaver-linux";
+              src = ./linux;
+
+              nativeBuildInputs = with pkgs; [
+                  pkg-config
+                  makeWrapper
+                  # addOpenGLRunpath
+                  # xorg.libXrender
+                  # xorg.libXcursor
+                  # xorg.libXrandr
+                  # xorg.libXi
+                  # xorg.libXext
+                  # xorg.libxcb
+                  # xorg.libXxf86vm
+              ];
+
+              buildInputs = with pkgs; [
+                  libGL
+                  wayland
+                  wayland-protocols
+                  libxkbcommon
+                  xorg.libX11
+                  # xorg.libXrender
+                  xorg.libXcursor
+                  xorg.libXrandr
+                  xorg.libXi
+                  # xorg.libXext
+                  xorg.libxcb
+                  # xorg.libXxf86vm
+              ];
+              
+              singleStep = true;
+
+              # NIX_CFLAGS_LINK = "-Wl,-rpath,${pkgs.libGL}/lib";
+
+              # addOpenGLRunpath $out/bin/flux-linux-screensaver
+
+              postInstall = ''
+                wrapProgram $out/bin/flux-linux-screensaver \
+                  --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [ pkgs.libGL ]}
+              '';
+
+              # postFixup = ''
+              #     patchelf --set-rpath "${lib.makeLibraryPath buildInputs}" $out/bin/flux-linux-screensaver
+              # '';
+          };
         };
 
         defaultPackage = packages.flux-screensaver-windows;
 
-        devShell = pkgs.mkShell {
-          inputsFrom = [ packages.flux-screensaver-windows ];
-          packages = with pkgs; [ toolchain nixfmt ripgrep ];
+        devShell = let
+            SDL2_static = pkgs.SDL2.overrideAttrs (old: rec {
+              version = "2.0.22";
+              name = "SDL2-linux-static-${version}";
+              src = builtins.fetchurl {
+                url = "https://www.libsdl.org/release/${old.pname}-${version}.tar.gz";
+                sha256 = "sha256:0bkzd5h7kn4xmd93hpbla4n2f82nb35s0xcs4p3kybl84wqvyz7y";
+              };
+              dontDisableStatic = true;
+            });
+          in pkgs.mkShell {
+          inputsFrom = [ packages.flux-screensaver-linux ];
+          packages = with pkgs; [
+              toolchain
+              nixfmt
+              ripgrep
+          ];
+
+          shellHook = ''
+            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/run/opengl-driver/lib/:${
+              lib.makeLibraryPath (with pkgs; [ libGL ])
+            }
+          '';
         };
       });
 }

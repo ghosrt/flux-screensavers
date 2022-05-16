@@ -6,8 +6,10 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::video::GLProfile;
 use std::rc::Rc;
-use winapi::shared::windef::HWND;
 use core::ffi::c_void;
+
+#[cfg(target_os = "windows")]
+use winapi::shared::windef::HWND;
 
 const SETTINGS: Settings = Settings {
     viscosity: 1.0,
@@ -60,7 +62,7 @@ const BASE_DPI: u32 = 96;
 
 enum Mode {
     Screensaver,
-    Preview(HWND),
+    Preview(u64),
 }
 
 fn main() {
@@ -76,7 +78,7 @@ fn main() {
     };
 }
 
-fn run_flux(window_handle: Option<HWND>) {
+fn run_flux(window_handle: Option<u64>) {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
@@ -87,10 +89,12 @@ fn run_flux(window_handle: Option<HWND>) {
     let (window, physical_width, physical_height) = {
         if let Some(parent_handle) = window_handle {
             sdl2::hint::set("SDL_VIDEO_FOREIGN_WINDOW_OPENGL", "1");
+            sdl2::hint::set("SDL_VIDEO_WINDOW_SHARE_PIXEL_FORMAT", "0");
             let sdl_window: *mut sdl2_sys::SDL_Window = unsafe { sdl2_sys::SDL_CreateWindowFrom(parent_handle as *const c_void) };
 
             if sdl_window.is_null() {
                 log::error!("Can’t create the preview window with the handle {:?}", parent_handle);
+                log::error!("{}", sdl2::get_error());
                 std::process::exit(1)
             }
 
@@ -169,17 +173,31 @@ fn run_flux(window_handle: Option<HWND>) {
 
 fn read_flags() -> Result<Mode, String> {
     match std::env::args().nth(1).as_mut().map(|s| s.as_str()) {
+        Some("--window-id") => {
+            let handle_id = std::env::args().nth(2).unwrap();
+            let handle = u64::from_str_radix(handle_id.trim_start_matches("0x"), 16).unwrap();
+            Ok(Mode::Preview(handle))
+        },
         Some("/s") => Ok(Mode::Screensaver),
         Some("/p") => {
             let handle_id = std::env::args()
                 .nth(2)
                 .ok_or_else(|| "I can’t find the window to show a screensaver preview.")?;
             let handle =
-                handle_id.parse::<usize>().map_err(|e| e.to_string())? as HWND;
+                handle_id.parse::<u64>().map_err(|e| e.to_string())?;
             Ok(Mode::Preview(handle))
         }
         Some(s) => {
-            return Err(format!("I don’t know what the argument {} is.", s));
+            let handle_id = std::env::var("XSCREENSAVER_WINDOW").unwrap();
+            let handle = {
+                if handle_id.starts_with("0x") {
+                    u64::from_str_radix(handle_id.trim_start_matches("0x"), 16).unwrap()
+                } else {
+                    handle_id.parse::<u64>().unwrap()
+                }
+            };
+            Ok(Mode::Preview(handle))
+            // return Err(format!("I don’t know what the argument {} is.", s));
         }
         None => {
             return Err(format!("{}", "You need to provide at least on flag."));
