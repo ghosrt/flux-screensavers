@@ -52,8 +52,8 @@ fn main() {
 }
 
 fn run_flux(optional_window: Option<RawWindowHandle>) {
-    // #[cfg(windows)]
-    // set_dpi_awareness().unwrap();
+    #[cfg(windows)]
+    set_dpi_awareness().unwrap();
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -62,11 +62,12 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
     gl_attr.set_context_profile(GLProfile::Core);
     gl_attr.set_context_version(3, 3);
     // gl_attr.set_context_flags().debug().set();
-    gl_attr.set_multisample_buffers(2);
-    gl_attr.set_multisample_samples(4);
+    // gl_attr.set_multisample_buffers(2);
+    // gl_attr.set_multisample_samples(4);
 
     // FIX
-    // let _child_window: sdl2::video::Window;
+    let _child_window: sdl2::video::Window;
+    let _child_window_context: std::rc::Rc<sdl2::video::WindowContext>;
 
     let (window, physical_width, physical_height) = {
         if let Some(raw_window_handle) = optional_window {
@@ -75,6 +76,7 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
                 _ => panic!("This platform is not supported"),
             };
 
+            sdl2::hint::set("SDL_VIDEO_ALLOW_SCREENSAVER", "1"); // Does this work? No.
             sdl2::hint::set("SDL_VIDEO_FOREIGN_WINDOW_OPENGL", "1");
             let sdl_window: *mut sdl2_sys::SDL_Window =
                 unsafe { sdl2_sys::SDL_CreateWindowFrom(parent_handle as *const c_void) };
@@ -105,6 +107,7 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
                         set_window_parent_win32(child_handle.hwnd as HWND, parent_handle as HWND)
                     } {
                         log::debug!("Linked preview window");
+                        _child_window_context = child_window.context();
                     }
                 }
                 _ => (),
@@ -112,11 +115,11 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
 
             let (physical_width, physical_height) = parent_window.drawable_size();
 
-            let window = Window::PreviewWindow {
-                handle: child_window,
-                parent_handle: parent_window,
-            };
-            (window, physical_width, physical_height)
+            // let window = Window::PreviewWindow {
+            //     handle: child_window,
+            //     parent_handle: parent_window,
+            // };
+            (parent_window, physical_width, physical_height)
         } else {
             let display_mode = video_subsystem.current_display_mode(0).unwrap();
             let physical_width = display_mode.w as u32;
@@ -124,6 +127,7 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
             let window = video_subsystem
                 .window("Flux", physical_width, physical_height)
                 .fullscreen_desktop()
+                .input_grabbed()
                 .allow_highdpi()
                 .opengl()
                 .build()
@@ -131,13 +135,16 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
                     log::error!("{}", e.to_string());
                     std::process::exit(1)
                 });
+
             // Hide mouse cursor
             sdl_context.mouse().show_cursor(false);
-            (Window::MainWindow(window), physical_width, physical_height)
+            sdl_context.mouse().set_relative_mouse_mode(true);
+
+            (window, physical_width, physical_height)
         }
     };
 
-    let _ctx = window.target_window().gl_create_context().unwrap();
+    let _ctx = window.gl_create_context().unwrap();
     let gl = unsafe {
         glow::Context::from_loader_function(|s| video_subsystem.gl_get_proc_address(s) as *const _)
     };
@@ -147,9 +154,6 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
     let logical_width = (physical_width as f64 / scale_factor) as u32;
     let logical_height = (physical_height as f64 / scale_factor) as u32;
 
-    // let logical_width = physical_width;
-    // let logical_height = physical_height;
-    //
     log::debug!(
         "pw: {}, ph: {}, lw: {}, lh: {}, dpi: {}",
         physical_width,
@@ -216,14 +220,35 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
                     ..
                 }
                 | Event::KeyDown { .. }
-                | Event::MouseMotion { .. }
                 | Event::MouseButtonDown { .. } => break 'main,
+                Event::MouseMotion {
+                    window_id,
+                    which,
+                    x,
+                    y,
+                    xrel,
+                    yrel,
+                    ..
+                } => {
+                    if i32::max(xrel.abs(), yrel.abs()) > 10 {
+                        break 'main;
+                    }
+                    log::debug!(
+                        "window_id: {:?}, which: {:?}, x: {:?}, y: {:?}, xrel: {:?}, yrel: {:?}",
+                        window_id,
+                        which,
+                        x,
+                        y,
+                        xrel,
+                        yrel
+                    );
+                }
                 _ => {}
             }
         }
 
         flux.animate(start.elapsed().as_millis() as f32);
-        window.target_window().gl_swap_window();
+        window.gl_swap_window();
         ::std::thread::sleep(::std::time::Duration::new(0, 1_000_000_000u32 / 60));
     }
 }
@@ -274,26 +299,26 @@ unsafe fn set_window_parent_win32(handle: HWND, parent_handle: HWND) -> bool {
     true
 }
 
-// #[cfg(windows)]
-// pub fn set_dpi_awareness() -> Result<(), String> {
-//     use std::ptr;
-//     use winapi::{
-//         shared::winerror::{E_INVALIDARG, S_OK},
-//         um::shellscalingapi::{
-//             GetProcessDpiAwareness, SetProcessDpiAwareness, PROCESS_DPI_UNAWARE,
-//             PROCESS_PER_MONITOR_DPI_AWARE,
-//         },
-//     };
+#[cfg(windows)]
+pub fn set_dpi_awareness() -> Result<(), String> {
+    use std::ptr;
+    use winapi::{
+        shared::winerror::{E_INVALIDARG, S_OK},
+        um::shellscalingapi::{
+            GetProcessDpiAwareness, SetProcessDpiAwareness, PROCESS_DPI_UNAWARE,
+            PROCESS_PER_MONITOR_DPI_AWARE,
+        },
+    };
 
-//     match unsafe { SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE) } {
-//         S_OK => Ok(()),
-//         E_INVALIDARG => Err("Could not set DPI awareness.".into()),
-//         _ => {
-//             let mut awareness = PROCESS_DPI_UNAWARE;
-//             match unsafe { GetProcessDpiAwareness(ptr::null_mut(), &mut awareness) } {
-//                 S_OK if awareness == PROCESS_PER_MONITOR_DPI_AWARE => Ok(()),
-//                 _ => Err("Please disable DPI awareness override in program properties.".into()),
-//             }
-//         }
-//     }
-// }
+    match unsafe { SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE) } {
+        S_OK => Ok(()),
+        E_INVALIDARG => Err("Could not set DPI awareness.".into()),
+        _ => {
+            let mut awareness = PROCESS_DPI_UNAWARE;
+            match unsafe { GetProcessDpiAwareness(ptr::null_mut(), &mut awareness) } {
+                S_OK if awareness == PROCESS_PER_MONITOR_DPI_AWARE => Ok(()),
+                _ => Err("Please disable DPI awareness override in program properties.".into()),
+            }
+        }
+    }
+}
