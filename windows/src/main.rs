@@ -256,6 +256,8 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
 
 fn read_flags() -> Result<Mode, String> {
     match std::env::args().nth(1).as_mut().map(|s| {
+        // I think the test button sends an uppercase /S, which doesn’t seem to
+        // be documented anywhere.
         s.make_ascii_lowercase();
         s.as_str()
     }) {
@@ -287,10 +289,15 @@ unsafe fn set_window_parent_win32(handle: HWND, parent_handle: HWND) -> bool {
         GetWindowLongPtrA, SetParent, SetWindowLongPtrA, GWL_STYLE, WS_CHILD, WS_POPUP,
     };
 
+    // Attach our window to the parent window.
+    // You can get more error information with `GetLastError`
+    // https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setparent
     if SetParent(handle, parent_handle).is_null() {
         return false;
     }
 
+    // `SetParent` doesn’t actually set the window style flags. `WS_POPUP` and
+    // `WS_CHILD` are mutually exclusive.
     SetWindowLongPtrA(
         handle,
         GWL_STYLE,
