@@ -65,9 +65,10 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
     let gl_attr = video_subsystem.gl_attr();
     gl_attr.set_context_profile(GLProfile::Core);
     gl_attr.set_context_version(3, 3);
-    // gl_attr.set_context_flags().debug().set();
-    // gl_attr.set_multisample_buffers(2);
-    // gl_attr.set_multisample_samples(4);
+    gl_attr.set_multisample_buffers(2);
+    gl_attr.set_multisample_samples(4);
+    #[cfg(debug_assertions)]
+    gl_attr.set_context_flags().debug().set();
 
     let (window, physical_width, physical_height) = {
         if let Some(raw_window_handle) = optional_window {
