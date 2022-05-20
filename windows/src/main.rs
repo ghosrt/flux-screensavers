@@ -150,6 +150,12 @@ fn run_flux(mode: Mode) -> Result<(), String> {
     // Create the OpenGL context. We don’t use the context it returns, but make
     // sure it isn’t dropped.
     let _ctx = window.target_window().gl_create_context()?;
+
+    // Try to enable vsync.
+    if let Err(err) = video_subsystem.gl_set_swap_interval(sdl2::video::SwapInterval::VSync) {
+        log::error!("Can’t enable vsync: {}", err);
+    }
+
     let gl = unsafe {
         glow::Context::from_loader_function(|s| video_subsystem.gl_get_proc_address(s) as *const _)
     };
@@ -250,7 +256,6 @@ fn run_flux(mode: Mode) -> Result<(), String> {
 
         flux.animate(start.elapsed().as_millis() as f32);
         window.target_window().gl_swap_window();
-        ::std::thread::sleep(::std::time::Duration::new(0, 1_000_000_000u32 / 60));
     }
 
     Ok(())
