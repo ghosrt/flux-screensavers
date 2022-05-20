@@ -316,24 +316,13 @@ unsafe fn set_window_parent_win32(handle: HWND, parent_handle: HWND) -> bool {
 
 #[cfg(windows)]
 pub fn set_dpi_awareness() -> Result<(), String> {
-    use std::ptr;
     use winapi::{
-        shared::winerror::{E_INVALIDARG, S_OK},
-        um::shellscalingapi::{
-            GetProcessDpiAwareness, SetProcessDpiAwareness, PROCESS_DPI_UNAWARE,
-            PROCESS_PER_MONITOR_DPI_AWARE,
-        },
+        shared::winerror::S_OK,
+        um::shellscalingapi::{SetProcessDpiAwareness, PROCESS_PER_MONITOR_DPI_AWARE},
     };
 
     match unsafe { SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE) } {
         S_OK => Ok(()),
-        E_INVALIDARG => Err("Could not set DPI awareness.".into()),
-        _ => {
-            let mut awareness = PROCESS_DPI_UNAWARE;
-            match unsafe { GetProcessDpiAwareness(ptr::null_mut(), &mut awareness) } {
-                S_OK if awareness == PROCESS_PER_MONITOR_DPI_AWARE => Ok(()),
-                _ => Err("Please disable DPI awareness override in program properties.".into()),
-            }
-        }
+        _ => Err("Can’t set DPI awareness.".to_string()),
     }
 }
