@@ -46,9 +46,8 @@ fn main() {
 
     env_logger::init_from_env(env);
 
-    match read_flags() {
-        Ok(Mode::Screensaver) => run_flux(None),
-        Ok(Mode::Preview(handle)) => run_flux(Some(handle)),
+    match read_flags().and_then(run_flux) {
+        Ok(_) => std::process::exit(0),
         Err(err) => {
             log::error!("{}", err);
             std::process::exit(1)
@@ -56,12 +55,12 @@ fn main() {
     };
 }
 
-fn run_flux(optional_window: Option<RawWindowHandle>) {
+fn run_flux(mode: Mode) -> Result<(), String> {
     #[cfg(windows)]
-    set_dpi_awareness().unwrap();
+    set_dpi_awareness()?;
 
-    let sdl_context = sdl2::init().unwrap();
-    let video_subsystem = sdl_context.video().unwrap();
+    let sdl_context = sdl2::init()?;
+    let video_subsystem = sdl_context.video()?;
 
     let gl_attr = video_subsystem.gl_attr();
     gl_attr.set_context_profile(GLProfile::Core);
@@ -71,24 +70,28 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
     #[cfg(debug_assertions)]
     gl_attr.set_context_flags().debug().set();
 
-    let (window, physical_width, physical_height) = {
-        if let Some(raw_window_handle) = optional_window {
+    let display_mode = video_subsystem.current_display_mode(0)?;
+    log::debug!("Refresh rate: {}fps", display_mode.refresh_rate);
+
+    let (window, physical_width, physical_height) = match mode {
+        Mode::Preview(raw_window_handle) => {
             let parent_handle = match raw_window_handle {
                 RawWindowHandle::Win32(handle) => handle.hwnd,
-                _ => panic!("This platform is not supported"),
+                _ => return Err("This platform is not supported".to_string()),
             };
 
             sdl2::hint::set("SDL_VIDEO_ALLOW_SCREENSAVER", "1"); // Does this work? No.
+            // Tell SDL that the window we’re about to adopt will be used with
+            // OpenGL.
             sdl2::hint::set("SDL_VIDEO_FOREIGN_WINDOW_OPENGL", "1");
             let sdl_window: *mut sdl2_sys::SDL_Window =
                 unsafe { sdl2_sys::SDL_CreateWindowFrom(parent_handle as *const c_void) };
 
             if sdl_window.is_null() {
-                log::error!(
+                return Err(format!(
                     "Can’t create the preview window with the handle {:?}",
                     parent_handle
-                );
-                std::process::exit(1)
+                ));
             }
 
             let parent_window: sdl2::video::Window =
@@ -100,7 +103,7 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
                 .borderless()
                 .hidden()
                 .build()
-                .unwrap();
+                .map_err(|err| err.to_string())?;
 
             match child_window.raw_window_handle() {
                 #[cfg(target_os = "windows")]
@@ -121,8 +124,8 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
                 parent_handle: parent_window,
             };
             (window, physical_width, physical_height)
-        } else {
-            let display_mode = video_subsystem.current_display_mode(0).unwrap();
+        }
+        Mode::Screensaver => {
             let physical_width = display_mode.w as u32;
             let physical_height = display_mode.h as u32;
             let window = video_subsystem
@@ -132,10 +135,7 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
                 .allow_highdpi()
                 .opengl()
                 .build()
-                .unwrap_or_else(|e| {
-                    log::error!("{}", e.to_string());
-                    std::process::exit(1)
-                });
+                .map_err(|err| err.to_string())?;
 
             // Hide mouse cursor
             sdl_context.mouse().show_cursor(false);
@@ -145,12 +145,15 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
         }
     };
 
-    let _ctx = window.target_window().gl_create_context().unwrap();
+    // Create the OpenGL context. We don’t use the context it returns, but make
+    // sure it isn’t dropped.
+    let _ctx = window.target_window().gl_create_context()?;
     let gl = unsafe {
         glow::Context::from_loader_function(|s| video_subsystem.gl_get_proc_address(s) as *const _)
     };
     log::debug!("{:?}", gl.version());
-    let (_, dpi, _) = video_subsystem.display_dpi(0).unwrap();
+
+    let (_, dpi, _) = video_subsystem.display_dpi(0)?;
     let scale_factor = dpi as f64 / BASE_DPI as f64;
     let logical_width = (physical_width as f64 / scale_factor) as u32;
     let logical_height = (physical_height as f64 / scale_factor) as u32;
@@ -207,44 +210,39 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
         physical_height,
         &Rc::new(settings),
     )
-    .unwrap();
+    .map_err(|err| err.to_string())?;
 
-    let mut event_pump = sdl_context.event_pump().unwrap();
+    let mut event_pump = sdl_context.event_pump()?;
     let start = std::time::Instant::now();
 
     'main: loop {
         for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. }
-                | Event::Window {
-                    win_event: sdl2::event::WindowEvent::Close,
-                    ..
-                }
-                | Event::KeyDown { .. }
-                | Event::MouseButtonDown { .. } => break 'main,
-                Event::MouseMotion {
-                    window_id,
-                    which,
-                    x,
-                    y,
-                    xrel,
-                    yrel,
-                    ..
-                } => {
-                    if i32::max(xrel.abs(), yrel.abs()) > MINIMUM_MOUSE_MOTION_TO_EXIT_SCREENSAVER {
-                        break 'main;
+            match mode {
+                Mode::Preview(_) => match event {
+                    Event::Quit { .. }
+                    | Event::Window {
+                        win_event: sdl2::event::WindowEvent::Close,
+                        ..
+                    } => break 'main,
+                    _ => (),
+                },
+                Mode::Screensaver => match event {
+                    Event::Quit { .. }
+                    | Event::Window {
+                        win_event: sdl2::event::WindowEvent::Close,
+                        ..
                     }
-                    log::debug!(
-                        "window_id: {:?}, which: {:?}, x: {:?}, y: {:?}, xrel: {:?}, yrel: {:?}",
-                        window_id,
-                        which,
-                        x,
-                        y,
-                        xrel,
-                        yrel
-                    );
-                }
-                _ => {}
+                    | Event::KeyDown { .. }
+                    | Event::MouseButtonDown { .. } => break 'main,
+                    Event::MouseMotion { xrel, yrel, .. } => {
+                        if i32::max(xrel.abs(), yrel.abs())
+                            > MINIMUM_MOUSE_MOTION_TO_EXIT_SCREENSAVER
+                        {
+                            break 'main;
+                        }
+                    }
+                    _ => {}
+                },
             }
         }
 
@@ -252,6 +250,8 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
         window.target_window().gl_swap_window();
         ::std::thread::sleep(::std::time::Duration::new(0, 1_000_000_000u32 / 60));
     }
+
+    Ok(())
 }
 
 fn read_flags() -> Result<Mode, String> {
