@@ -21,7 +21,11 @@ enum Mode {
 
 enum Window<W: HasRawWindowHandle> {
     MainWindow(W),
-    PreviewWindow { handle: W, parent_handle: W },
+    PreviewWindow {
+        #[allow(unused)]
+        handle: W, // Keep this handle alive
+        parent_handle: W,
+    },
 }
 
 impl<W: HasRawWindowHandle> Window<W> {
@@ -65,10 +69,6 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
     // gl_attr.set_multisample_buffers(2);
     // gl_attr.set_multisample_samples(4);
 
-    // FIX
-    let _child_window: sdl2::video::Window;
-    let _child_window_context: std::rc::Rc<sdl2::video::WindowContext>;
-
     let (window, physical_width, physical_height) = {
         if let Some(raw_window_handle) = optional_window {
             let parent_handle = match raw_window_handle {
@@ -107,7 +107,6 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
                         set_window_parent_win32(child_handle.hwnd as HWND, parent_handle as HWND)
                     } {
                         log::debug!("Linked preview window");
-                        _child_window_context = child_window.context();
                     }
                 }
                 _ => (),
@@ -115,11 +114,11 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
 
             let (physical_width, physical_height) = parent_window.drawable_size();
 
-            // let window = Window::PreviewWindow {
-            //     handle: child_window,
-            //     parent_handle: parent_window,
-            // };
-            (parent_window, physical_width, physical_height)
+            let window = Window::PreviewWindow {
+                handle: child_window,
+                parent_handle: parent_window,
+            };
+            (window, physical_width, physical_height)
         } else {
             let display_mode = video_subsystem.current_display_mode(0).unwrap();
             let physical_width = display_mode.w as u32;
@@ -140,11 +139,11 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
             sdl_context.mouse().show_cursor(false);
             sdl_context.mouse().set_relative_mouse_mode(true);
 
-            (window, physical_width, physical_height)
+            (Window::MainWindow(window), physical_width, physical_height)
         }
     };
 
-    let _ctx = window.gl_create_context().unwrap();
+    let _ctx = window.target_window().gl_create_context().unwrap();
     let gl = unsafe {
         glow::Context::from_loader_function(|s| video_subsystem.gl_get_proc_address(s) as *const _)
     };
@@ -248,7 +247,7 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
         }
 
         flux.animate(start.elapsed().as_millis() as f32);
-        window.gl_swap_window();
+        window.target_window().gl_swap_window();
         ::std::thread::sleep(::std::time::Duration::new(0, 1_000_000_000u32 / 60));
     }
 }
