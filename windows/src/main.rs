@@ -140,8 +140,7 @@ fn run_flux(mode: Mode) -> Result<(), String> {
                 .build()
                 .map_err(|err| err.to_string())?;
 
-            // Hide mouse cursor
-            sdl_context.mouse().show_cursor(false);
+            // Hide the cursor and report relative mouse movements.
             sdl_context.mouse().set_relative_mouse_mode(true);
 
             (Window::MainWindow(window), physical_width, physical_height)
