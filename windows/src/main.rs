@@ -80,7 +80,10 @@ fn run_flux(mode: Mode) -> Result<(), String> {
                 _ => return Err("This platform is not supported".to_string()),
             };
 
-            sdl2::hint::set("SDL_VIDEO_ALLOW_SCREENSAVER", "1"); // Does this work? No.
+            // SDL disables the screensaver by default. Make sure we let the
+            // screensaver run whenever we’re showing the preview.
+            video_subsystem.enable_screen_saver();
+
             // Tell SDL that the window we’re about to adopt will be used with
             // OpenGL.
             sdl2::hint::set("SDL_VIDEO_FOREIGN_WINDOW_OPENGL", "1");
