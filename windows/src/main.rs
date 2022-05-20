@@ -13,6 +13,7 @@ use std::rc::Rc;
 use winapi::shared::windef::HWND;
 
 const BASE_DPI: u32 = 96;
+const MINIMUM_MOUSE_MOTION_TO_EXIT_SCREENSAVER: i32 = 10;
 
 enum Mode {
     Screensaver,
@@ -230,7 +231,7 @@ fn run_flux(optional_window: Option<RawWindowHandle>) {
                     yrel,
                     ..
                 } => {
-                    if i32::max(xrel.abs(), yrel.abs()) > 10 {
+                    if i32::max(xrel.abs(), yrel.abs()) > MINIMUM_MOUSE_MOTION_TO_EXIT_SCREENSAVER {
                         break 'main;
                     }
                     log::debug!(
