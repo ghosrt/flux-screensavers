@@ -65,8 +65,11 @@ fn run_flux(mode: Mode) -> Result<(), String> {
     let gl_attr = video_subsystem.gl_attr();
     gl_attr.set_context_profile(GLProfile::Core);
     gl_attr.set_context_version(3, 3);
-    gl_attr.set_multisample_buffers(2);
-    gl_attr.set_multisample_samples(4);
+
+    // Forcibly disable antialiasing. We take care of that internally.
+    gl_attr.set_multisample_buffers(0);
+    gl_attr.set_multisample_samples(0);
+
     #[cfg(debug_assertions)]
     gl_attr.set_context_flags().debug().set();
 
@@ -134,7 +137,6 @@ fn run_flux(mode: Mode) -> Result<(), String> {
             let window = video_subsystem
                 .window("Flux", physical_width, physical_height)
                 .fullscreen_desktop()
-                .input_grabbed()
                 .allow_highdpi()
                 .opengl()
                 .build()
