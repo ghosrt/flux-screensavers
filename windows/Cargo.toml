@@ -34,5 +34,5 @@ winres = "0.1.12"
 [patch.crates-io]
 winres = { git = "https://github.com/sandydoo/winres", branch = "bugfix/fix-linking" }
 
-# [patch."https://github.com/sandydoo/flux"]
-# flux = { version = "2", path = "../../flux/crates/flux" }
+[patch."https://github.com/sandydoo/flux"]
+flux = { version = "2", path = "../../flux/crates/flux" }

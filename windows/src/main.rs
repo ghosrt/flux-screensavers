@@ -20,24 +20,29 @@ enum Mode {
     Preview(RawWindowHandle),
 }
 
-enum Window<W: HasRawWindowHandle> {
-    MainWindow(W),
-    PreviewWindow {
-        #[allow(unused)]
-        handle: W, // Keep this handle alive
-        parent_handle: W,
-    },
+struct Instance {
+    flux: Flux,
+    context: sdl2::video::GLContext,
+    window: sdl2::video::Window,
 }
 
-impl<W: HasRawWindowHandle> Window<W> {
-    fn target_window(&self) -> &W {
-        match self {
-            Window::MainWindow(ref handle) => handle,
-            Window::PreviewWindow {
-                ref parent_handle, ..
-            } => parent_handle,
-        }
+impl Instance {
+    pub fn draw(&mut self, timestep: f32) {
+        // Don’t use `gl_set_context_to_current`. It doesn’t use the
+        // corrent context!
+        self.window.gl_make_current(&self.context).unwrap();
+        self.flux.animate(timestep);
+        self.window.gl_swap_window();
     }
+}
+
+enum WindowMode<W: HasRawWindowHandle> {
+    AllDisplays(Vec<Instance>),
+    PreviewWindow {
+        instance: Instance,
+        #[allow(unused)]
+        event_window: W, // Keep this handle alive
+    },
 }
 
 fn main() {
@@ -73,111 +78,7 @@ fn run_flux(mode: Mode) -> Result<(), String> {
     #[cfg(debug_assertions)]
     gl_attr.set_context_flags().debug().set();
 
-    let display_mode = video_subsystem.current_display_mode(0)?;
-    log::debug!("Refresh rate: {}fps", display_mode.refresh_rate);
-
-    let (window, physical_width, physical_height) = match mode {
-        Mode::Preview(raw_window_handle) => {
-            let parent_handle = match raw_window_handle {
-                RawWindowHandle::Win32(handle) => handle.hwnd,
-                _ => return Err("This platform is not supported".to_string()),
-            };
-
-            // SDL disables the screensaver by default. Make sure we let the
-            // screensaver run whenever we’re showing the preview.
-            video_subsystem.enable_screen_saver();
-
-            // Tell SDL that the window we’re about to adopt will be used with
-            // OpenGL.
-            sdl2::hint::set("SDL_VIDEO_FOREIGN_WINDOW_OPENGL", "1");
-            let sdl_window: *mut sdl2_sys::SDL_Window =
-                unsafe { sdl2_sys::SDL_CreateWindowFrom(parent_handle as *const c_void) };
-
-            if sdl_window.is_null() {
-                return Err(format!(
-                    "Can’t create the preview window with the handle {:?}",
-                    parent_handle
-                ));
-            }
-
-            let parent_window: sdl2::video::Window =
-                unsafe { sdl2::video::Window::from_ll(video_subsystem.clone(), sdl_window) };
-
-            let child_window = video_subsystem
-                .window("Flux Preview", 0, 0)
-                .position(0, 0)
-                .borderless()
-                .hidden()
-                .build()
-                .map_err(|err| err.to_string())?;
-
-            match child_window.raw_window_handle() {
-                #[cfg(target_os = "windows")]
-                raw_window_handle::RawWindowHandle::Win32(child_handle) => {
-                    if unsafe {
-                        set_window_parent_win32(child_handle.hwnd as HWND, parent_handle as HWND)
-                    } {
-                        log::debug!("Linked preview window");
-                    }
-                }
-                _ => (),
-            }
-
-            let (physical_width, physical_height) = parent_window.drawable_size();
-
-            let window = Window::PreviewWindow {
-                handle: child_window,
-                parent_handle: parent_window,
-            };
-            (window, physical_width, physical_height)
-        }
-        Mode::Screensaver => {
-            let physical_width = display_mode.w as u32;
-            let physical_height = display_mode.h as u32;
-            let window = video_subsystem
-                .window("Flux", physical_width, physical_height)
-                .fullscreen_desktop()
-                .allow_highdpi()
-                .opengl()
-                .build()
-                .map_err(|err| err.to_string())?;
-
-            // Hide the cursor and report relative mouse movements.
-            sdl_context.mouse().set_relative_mouse_mode(true);
-
-            (Window::MainWindow(window), physical_width, physical_height)
-        }
-    };
-
-    // Create the OpenGL context. We don’t use the context it returns, but make
-    // sure it isn’t dropped.
-    let _ctx = window.target_window().gl_create_context()?;
-
-    // Try to enable vsync.
-    if let Err(err) = video_subsystem.gl_set_swap_interval(sdl2::video::SwapInterval::VSync) {
-        log::error!("Can’t enable vsync: {}", err);
-    }
-
-    let gl = unsafe {
-        glow::Context::from_loader_function(|s| video_subsystem.gl_get_proc_address(s) as *const _)
-    };
-    log::debug!("{:?}", gl.version());
-
-    let (_, dpi, _) = video_subsystem.display_dpi(0)?;
-    let scale_factor = dpi as f64 / BASE_DPI as f64;
-    let logical_width = (physical_width as f64 / scale_factor) as u32;
-    let logical_height = (physical_height as f64 / scale_factor) as u32;
-
-    log::debug!(
-        "pw: {}, ph: {}, lw: {}, lh: {}, dpi: {}",
-        physical_width,
-        physical_height,
-        logical_width,
-        logical_height,
-        dpi
-    );
-
-    let settings = Settings {
+    let settings = Rc::new(Settings {
         mode: settings::Mode::Normal,
         viscosity: 5.0,
         velocity_dissipation: 0.0,
@@ -210,17 +111,174 @@ fn run_flux(mode: Mode) -> Result<(), String> {
                 offset_increment: 1.0 / 1024.0,
             },
         ],
+    });
+
+    let mut window_mode = match mode {
+        Mode::Preview(raw_window_handle) => {
+            let preview_window_handle = match raw_window_handle {
+                RawWindowHandle::Win32(handle) => handle.hwnd,
+                _ => return Err("This platform is not supported yet".to_string()),
+            };
+
+            // SDL disables the screensaver by default. Make sure we let the
+            // screensaver run whenever we’re showing the preview.
+            video_subsystem.enable_screen_saver();
+
+            // Tell SDL that the window we’re about to adopt will be used with
+            // OpenGL.
+            sdl2::hint::set("SDL_VIDEO_FOREIGN_WINDOW_OPENGL", "1");
+            let sdl_preview_window: *mut sdl2_sys::SDL_Window =
+                unsafe { sdl2_sys::SDL_CreateWindowFrom(preview_window_handle as *const c_void) };
+
+            if sdl_preview_window.is_null() {
+                return Err(format!(
+                    "Can’t create the preview window with the handle {:?}",
+                    preview_window_handle
+                ));
+            }
+
+            let preview_window: sdl2::video::Window = unsafe {
+                sdl2::video::Window::from_ll(video_subsystem.clone(), sdl_preview_window)
+            };
+
+            // You need to create an actual window to listen to events. We’ll
+            // then link this to the preview window as a child to cleanup when
+            // the preview dialog is closed.
+            let event_window = video_subsystem
+                .window("Flux Preview", 0, 0)
+                .position(0, 0)
+                .borderless()
+                .hidden()
+                .build()
+                .map_err(|err| err.to_string())?;
+
+            match event_window.raw_window_handle() {
+                #[cfg(target_os = "windows")]
+                raw_window_handle::RawWindowHandle::Win32(event_window_handle) => {
+                    if unsafe {
+                        set_window_parent_win32(
+                            event_window_handle.hwnd as HWND,
+                            preview_window_handle as HWND,
+                        )
+                    } {
+                        log::debug!("Linked preview window");
+                    }
+                }
+                _ => (),
+            }
+
+            let (_, dpi, _) =
+                video_subsystem.display_dpi(preview_window.display_index().unwrap_or(0))?;
+            let scale_factor = dpi as f64 / BASE_DPI as f64;
+            let (physical_width, physical_height) = preview_window.drawable_size();
+            let logical_width = (physical_width as f64 / scale_factor) as u32;
+            let logical_height = (physical_height as f64 / scale_factor) as u32;
+
+            let context = preview_window.gl_create_context()?;
+            let glow_context = unsafe {
+                glow::Context::from_loader_function(|s| {
+                    video_subsystem.gl_get_proc_address(s) as *const _
+                })
+            };
+            log::debug!("{:?}", glow_context.version());
+
+            preview_window.gl_make_current(&context)?;
+            let flux = Flux::new(
+                &Rc::new(glow_context),
+                logical_width,
+                logical_height,
+                physical_width,
+                physical_height,
+                &settings,
+            )
+            .map_err(|err| err.to_string())?;
+
+            let instance = Instance {
+                flux,
+                context,
+                window: preview_window,
+            };
+
+            WindowMode::PreviewWindow {
+                instance,
+                event_window,
+            }
+        }
+        Mode::Screensaver => {
+            let display_count = video_subsystem.num_video_displays()?;
+            log::debug!("Detected {} displays", display_count);
+
+            let mut instances = Vec::with_capacity(display_count as usize);
+            for display_index in 0..display_count {
+                let (_, dpi, _) = video_subsystem.display_dpi(display_index)?;
+                let scale_factor = dpi as f64 / BASE_DPI as f64;
+                let bounds = video_subsystem.display_bounds(display_index)?;
+                let (physical_width, physical_height) = bounds.size();
+                let logical_width = (physical_width as f64 / scale_factor) as u32;
+                let logical_height = (physical_height as f64 / scale_factor) as u32;
+
+                log::debug!(
+                    "Display: {}\nPhysical size: {}x{}, Logical size: {}x{}, Position: {} {}, DPI: {}",
+                    display_index,
+                    physical_width,
+                    physical_height,
+                    logical_width,
+                    logical_height,
+                    bounds.x(),
+                    bounds.y(),
+                    dpi
+                );
+
+                // Create the SDL window
+                let window = video_subsystem
+                    .window("Flux", physical_width, physical_height)
+                    .position(bounds.x(), bounds.y())
+                    .input_grabbed()
+                    .fullscreen_desktop()
+                    .allow_highdpi()
+                    .opengl()
+                    .build()
+                    .map_err(|err| err.to_string())?;
+
+                let context = window.gl_create_context()?;
+                let glow_context = unsafe {
+                    glow::Context::from_loader_function(|s| {
+                        video_subsystem.gl_get_proc_address(s) as *const _
+                    })
+                };
+                log::debug!("{:?}", glow_context.version());
+
+                window.gl_make_current(&context)?;
+                let flux = Flux::new(
+                    &Rc::new(glow_context),
+                    logical_width,
+                    logical_height,
+                    physical_width,
+                    physical_height,
+                    &settings,
+                )
+                .map_err(|err| err.to_string())?;
+
+                let instance = Instance {
+                    flux,
+                    context,
+                    window,
+                };
+
+                instances.push(instance)
+            }
+
+            // Hide the cursor and report relative mouse movements.
+            sdl_context.mouse().set_relative_mouse_mode(true);
+
+            WindowMode::AllDisplays(instances)
+        }
     };
 
-    let mut flux = Flux::new(
-        &Rc::new(gl),
-        logical_width,
-        logical_height,
-        physical_width,
-        physical_height,
-        &Rc::new(settings),
-    )
-    .map_err(|err| err.to_string())?;
+    // Try to enable vsync.
+    if let Err(err) = video_subsystem.gl_set_swap_interval(sdl2::video::SwapInterval::VSync) {
+        log::error!("Can’t enable vsync: {}", err);
+    }
 
     let mut event_pump = sdl_context.event_pump()?;
     let start = std::time::Instant::now();
@@ -256,8 +314,17 @@ fn run_flux(mode: Mode) -> Result<(), String> {
             }
         }
 
-        flux.animate(start.elapsed().as_millis() as f32);
-        window.target_window().gl_swap_window();
+        let timestep = start.elapsed().as_millis() as f32;
+        match window_mode {
+            WindowMode::AllDisplays(ref mut instances) => {
+                for instance in instances.iter_mut() {
+                    instance.draw(timestep);
+                }
+            }
+            WindowMode::PreviewWindow {
+                ref mut instance, ..
+            } => instance.draw(timestep),
+        }
     }
 
     Ok(())
