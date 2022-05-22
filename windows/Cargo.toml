@@ -1,9 +1,15 @@
 [package]
 name = "flux-windows-screensaver"
 version = "0.1.0"
+description = "An ode to the macOS Drift screensaver"
+authors = ["Sander Melnikov <hey@sandydoo.me"]
+repository = "https://github.com/sandydoo/flux-screensavers/"
 edition = "2021"
-
 build = "build.rs"
+
+[package.metadata.winres]
+FileDescription = "An ode to the macOS Drift screensaver"
+LegalCopyright = "© 2023 Sander Melnikov"
 
 [dependencies]
 env_logger = "0.9"
@@ -22,7 +28,7 @@ features = [ "static-link", "raw-window-handle" ]
 version =  "0.3"
 features = [ "winuser", "winerror", "shellscalingapi" ]
 
-[target.'cfg(windows)'.build-dependencies]
+[build-dependencies]
 winres = "0.1.12"
 
 # [patch."https://github.com/sandydoo/flux"]

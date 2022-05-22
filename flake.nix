@@ -49,10 +49,15 @@
             nativeBuildInputs = with pkgs.pkgsCross.mingwW64; [ stdenv.cc ];
 
             buildInputs = with pkgs.pkgsCross.mingwW64; [
+              # Dig out windres from the depths of gcc
+              pkgs.pkgsCross.mingwW64.stdenv.cc.bintools.bintools_bin
+              # Needed by windres
+              pkgs.pkgsCross.mingwW64.stdenv.cc
+
               windows.mingw_w64_pthreads
               windows.pthreads
-              pkgs.ripgrep
               SDL2_static
+              pkgs.ripgrep
             ];
 
             CARGO_BUILD_TARGET = "x86_64-pc-windows-gnu";
