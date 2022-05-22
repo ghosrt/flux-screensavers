@@ -650,8 +650,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "winres"
 version = "0.1.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b68db261ef59e9e52806f688020631e987592bd83619edccda9c47d42cde4f6c"
+source = "git+https://github.com/sandydoo/winres?branch=bugfix/fix-linking#4875794cd45a7234be9ad775bffbb0a32823ae3c"
 dependencies = [
  "toml",
 ]

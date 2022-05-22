@@ -9,7 +9,7 @@ build = "build.rs"
 
 [package.metadata.winres]
 FileDescription = "An ode to the macOS Drift screensaver"
-LegalCopyright = "© 2023 Sander Melnikov"
+LegalCopyright = "© 2022 Sander Melnikov"
 
 [dependencies]
 env_logger = "0.9"
@@ -30,6 +30,9 @@ features = [ "winuser", "winerror", "shellscalingapi" ]
 
 [build-dependencies]
 winres = "0.1.12"
+
+[patch.crates-io]
+winres = { git = "https://github.com/sandydoo/winres", branch = "bugfix/fix-linking" }
 
 # [patch."https://github.com/sandydoo/flux"]
 # flux = { version = "2", path = "../../flux/crates/flux" }
