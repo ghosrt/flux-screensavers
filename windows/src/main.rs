@@ -381,6 +381,8 @@ unsafe fn set_window_parent_win32(handle: HWND, parent_handle: HWND) -> bool {
     true
 }
 
+// Speficying DPI awarenes in the app manifest does not apply when running in a
+// preview window.
 #[cfg(windows)]
 pub fn set_dpi_awareness() -> Result<(), String> {
     use winapi::{
