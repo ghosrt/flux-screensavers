@@ -67,6 +67,7 @@ fn run_flux(mode: Mode) -> Result<(), String> {
     let gl_attr = video_subsystem.gl_attr();
     gl_attr.set_context_profile(GLProfile::Core);
     gl_attr.set_context_version(3, 3);
+    gl_attr.set_double_buffer(true);
 
     // Forcibly disable antialiasing. We take care of that internally.
     gl_attr.set_multisample_buffers(0);
