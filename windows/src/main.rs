@@ -1,5 +1,5 @@
 // Disable the console window that pops up when you launch the .exe
-// #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use core::ffi::c_void;
 use flux::{settings::*, *};
@@ -46,10 +46,7 @@ enum WindowMode<W: HasRawWindowHandle> {
 }
 
 fn main() {
-    // env_logger::init();
-    let env = env_logger::Env::default().filter_or("MY_LOG_LEVEL", "debug");
-
-    env_logger::init_from_env(env);
+    env_logger::init();
 
     match read_flags().and_then(run_flux) {
         Ok(_) => std::process::exit(0),
