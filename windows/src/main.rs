@@ -7,7 +7,10 @@ use glow::HasContext;
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use sdl2::event::Event;
 use sdl2::video::GLProfile;
+use std::fs::File;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::{fs, path};
 
 #[cfg(windows)]
 use winapi::shared::windef::HWND;
@@ -45,38 +48,8 @@ enum WindowMode<W: HasRawWindowHandle> {
     },
 }
 
-fn main() {
-    env_logger::init();
-
-    match read_flags().and_then(run_flux) {
-        Ok(_) => std::process::exit(0),
-        Err(err) => {
-            log::error!("{}", err);
-            std::process::exit(1)
-        }
-    };
-}
-
-fn run_flux(mode: Mode) -> Result<(), String> {
-    #[cfg(windows)]
-    set_dpi_awareness()?;
-
-    let sdl_context = sdl2::init()?;
-    let video_subsystem = sdl_context.video()?;
-
-    let gl_attr = video_subsystem.gl_attr();
-    gl_attr.set_context_profile(GLProfile::Core);
-    gl_attr.set_context_version(3, 3);
-    gl_attr.set_double_buffer(true);
-
-    // Forcibly disable antialiasing. We take care of that internally.
-    gl_attr.set_multisample_buffers(0);
-    gl_attr.set_multisample_samples(0);
-
-    #[cfg(debug_assertions)]
-    gl_attr.set_context_flags().debug().set();
-
-    let settings = Rc::new(Settings {
+fn default_settings() -> Settings {
+    Settings {
         mode: settings::Mode::Normal,
         viscosity: 5.0,
         velocity_dissipation: 0.0,
@@ -109,7 +82,53 @@ fn run_flux(mode: Mode) -> Result<(), String> {
                 offset_increment: 1.0 / 1024.0,
             },
         ],
-    });
+    }
+}
+
+fn main() {
+    // env_logger::init();
+    let env = env_logger::Env::default().filter_or("MY_LOG_LEVEL", "debug");
+
+    env_logger::init_from_env(env);
+
+    match read_flags().and_then(run_flux) {
+        Ok(_) => std::process::exit(0),
+        Err(err) => {
+            log::error!("{}", err);
+            std::process::exit(1)
+        }
+    };
+}
+
+fn run_flux(mode: Mode) -> Result<(), String> {
+    #[cfg(windows)]
+    set_dpi_awareness()?;
+
+    let sdl_context = sdl2::init()?;
+    let video_subsystem = sdl_context.video()?;
+
+    let gl_attr = video_subsystem.gl_attr();
+    gl_attr.set_context_profile(GLProfile::Core);
+    gl_attr.set_context_version(3, 3);
+    gl_attr.set_double_buffer(true);
+
+    // Forcibly disable antialiasing. We take care of that internally.
+    gl_attr.set_multisample_buffers(0);
+    gl_attr.set_multisample_samples(0);
+
+    #[cfg(debug_assertions)]
+    gl_attr.set_context_flags().debug().set();
+
+    let settings = Rc::new(load_settings());
+
+    // use std::fs::File;
+    // use std::io::prelude::*;
+    // let mut file = File::create("flux-settings.json").map_err(|e| e.to_string())?;
+    // file.write_all(b"{\"hello\": \"world\"}")
+    //     .map_err(|e| e.to_string())?;
+    // if let Ok(path) = std::env::current_dir() {
+    //     log::debug!("{}", path.display());
+    // }
 
     let mut window_mode = match mode {
         Mode::Preview(raw_window_handle) => {
@@ -229,10 +248,10 @@ fn run_flux(mode: Mode) -> Result<(), String> {
 
                 // Create the SDL window
                 let window = video_subsystem
-                    .window("Flux", physical_width, physical_height)
+                    .window("Flux", physical_width / 2, physical_height / 2)
                     .position(bounds.x(), bounds.y())
-                    .input_grabbed()
-                    .fullscreen_desktop()
+                    // .input_grabbed()
+                    // .fullscreen_desktop()
                     .allow_highdpi()
                     .opengl()
                     .build()
@@ -267,7 +286,7 @@ fn run_flux(mode: Mode) -> Result<(), String> {
             }
 
             // Hide the cursor and report relative mouse movements.
-            sdl_context.mouse().set_relative_mouse_mode(true);
+            // sdl_context.mouse().set_relative_mouse_mode(true);
 
             WindowMode::AllDisplays(instances)
         }
@@ -298,15 +317,16 @@ fn run_flux(mode: Mode) -> Result<(), String> {
                         win_event: sdl2::event::WindowEvent::Close,
                         ..
                     }
-                    | Event::KeyDown { .. }
-                    | Event::MouseButtonDown { .. } => break 'main,
-                    Event::MouseMotion { xrel, yrel, .. } => {
-                        if i32::max(xrel.abs(), yrel.abs())
-                            > MINIMUM_MOUSE_MOTION_TO_EXIT_SCREENSAVER
-                        {
-                            break 'main;
-                        }
-                    }
+                    // | Event::Display { .. }
+                    | Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Escape), .. }=> break 'main,
+                    // | Event::MouseButtonDown { .. } => break 'main,
+                    // Event::MouseMotion { xrel, yrel, .. } => {
+                    //     if i32::max(xrel.abs(), yrel.abs())
+                    //         > MINIMUM_MOUSE_MOTION_TO_EXIT_SCREENSAVER
+                    //     {
+                    //         break 'main;
+                    //     }
+                    // }
                     _ => {}
                 },
             }
@@ -352,6 +372,44 @@ fn read_flags() -> Result<Mode, String> {
         }
         None => {
             return Err(format!("{}", "You need to provide at least on flag."));
+        }
+    }
+}
+
+fn load_settings() -> Settings {
+    match directories::ProjectDirs::from("me", "sandydoo", "Flux Screensaver") {
+        None => {
+            log::debug!("Can’t get the preferences folder. Using default settings");
+            default_settings()
+        }
+
+        Some(project_dirs) => {
+            let preference_dir_path = project_dirs.preference_dir();
+            let settings_path = preference_dir_path.join("settings.json");
+
+            match fs::read_to_string(&settings_path) {
+                Ok(data) => {
+                    let settings =
+                        serde_json::from_str(&data).unwrap_or_else(|_| default_settings());
+                    log::debug!("Found settings in {}", &settings_path.display());
+                    settings
+                }
+
+                Err(_) => {
+                    log::debug!(
+                        "Using default settings. Writing default settings to {}",
+                        &settings_path.display()
+                    );
+                    let settings = default_settings();
+
+                    if let Ok(file) = fs::create_dir_all(&preference_dir_path)
+                        .and_then(|_| File::create(&settings_path))
+                    {
+                        serde_json::to_writer_pretty(&file, &settings).unwrap();
+                    }
+                    settings
+                }
+            }
         }
     }
 }
