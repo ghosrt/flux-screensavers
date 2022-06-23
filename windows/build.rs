@@ -1,5 +1,5 @@
 fn env(name: &'static str) -> String {
-    std::env::var(name).unwrap_or(String::new())
+    std::env::var(name).unwrap_or_default()
 }
 
 fn main() {

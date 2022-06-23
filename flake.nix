@@ -23,6 +23,7 @@
           combine ([
             latest.rustc
             latest.cargo
+            latest.clippy
             targets.x86_64-pc-windows-gnu.latest.rust-std
           ]);
 
@@ -31,24 +32,59 @@
           cargo = rustToolchain;
         };
       in rec {
-        devShells.default = pkgs.mkShell {
-          inputsFrom = [ packages.default ];
-          packages = with pkgs; [ rustToolchain nixfmt ripgrep ];
+        devShells = {
+          default = pkgs.mkShell {
+            inputsFrom = [ packages.default ];
+            packages = with pkgs; [ rustToolchain nixfmt ripgrep ];
+          };
+
+          cross-windows = pkgs.mkShell {
+            inputsFrom = [ packages.flux-screensaver-windows ];
+            packages = with pkgs; [ rustToolchain nixfmt ripgrep ];
+          };
         };
 
-        packages.default = let
-          inherit (pkgs.pkgsCross) mingwW64;
-          SDL2_static = pkgs.pkgsCross.mingwW64.SDL2.overrideAttrs (old: rec {
-            version = "2.0.22";
-            name = "SDL2-static-${version}";
-            src = builtins.fetchurl {
-              url =
-                "https://www.libsdl.org/release/${old.pname}-${version}.tar.gz";
-              sha256 =
-                "sha256:0bkzd5h7kn4xmd93hpbla4n2f82nb35s0xcs4p3kybl84wqvyz7y";
-            };
-            dontDisableStatic = true;
-          });
+        packages = {
+          default = let
+            SDL2_static = pkgs.SDL2.overrideAttrs (old: rec {
+              version = "2.0.22";
+              name = "SDL2-static-${version}";
+              src = builtins.fetchurl {
+                url =
+                  "https://www.libsdl.org/release/${old.pname}-${version}.tar.gz";
+                sha256 =
+                  "sha256:0bkzd5h7kn4xmd93hpbla4n2f82nb35s0xcs4p3kybl84wqvyz7y";
+              };
+              dontDisableStatic = true;
+            });
+          in naersk-lib.buildPackage rec {
+            name = "flux-screensaver-windows";
+            src = ./windows;
+            release = true;
+            gitAllRefs = true;
+
+            nativeBuildInputs = [ pkgs.pkg-config ];
+            buildInputs = [ SDL2_static ];
+
+            shellHook = preBuild;
+            preBuild = ''
+              export NIX_LDFLAGS="$NIX_LDFLAGS -L ${SDL2_static}/lib"
+            '';
+          };
+
+          flux-screensaver-windows = let
+            inherit (pkgs.pkgsCross) mingwW64;
+            SDL2_static = pkgs.pkgsCross.mingwW64.SDL2.overrideAttrs (old: rec {
+              version = "2.0.22";
+              name = "SDL2-static-${version}";
+              src = builtins.fetchurl {
+                url =
+                  "https://www.libsdl.org/release/${old.pname}-${version}.tar.gz";
+                sha256 =
+                  "sha256:0bkzd5h7kn4xmd93hpbla4n2f82nb35s0xcs4p3kybl84wqvyz7y";
+              };
+              dontDisableStatic = true;
+            });
           in naersk-lib.buildPackage rec {
             name = "flux-screensaver-windows";
             src = ./windows;
@@ -88,5 +124,6 @@
               mv $out/bin/${name}.exe "$out/bin/Flux.scr"
             '';
           };
+        };
       });
 }

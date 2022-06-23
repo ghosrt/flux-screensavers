@@ -4,16 +4,16 @@
 
 # Screensavers for Flux
 
-### [You can now buy Flux as a Windows screensaver →][store]
+#### [You can now buy Flux as a Windows screensaver →][store]
 Enjoy staring at it for hours as your computer idles and help support development. More platforms coming soon!
 
 ---
 
-I’m working on creating native screensavers for [Flux][flux] — a fluid simulation inspired by the MacOS Drift screensaver.
+I’m working on creating native screensavers for [Flux][flux] — a fluid simulation inspired by the macOS Drift screensaver.
 
 This repository contains:
 
-- `flux-ffi` — a foreign function interface for the [Flux library][flux].
+- `flux-ffi` — a C-style foreign function interface for the [Flux library][flux].
 - Native screensavers for the following platforms:
   - [MacOS](#macos)
   - [Windows](#windows)
@@ -21,7 +21,7 @@ This repository contains:
 
 ## Build for platform
 
-### MacOS
+### macOS
 
 Build with XCode.
 
@@ -42,13 +42,20 @@ lipo target/aarch64-apple-darwin/release/libflux.a target/x86_64-apple-darwin/re
 
 ### Windows
 
-Cross-compile to Windows from NixOS.
+This repo is set up to cross-compile Windows binaries from Linux using Nix.
 
 ```sh
-nix build
+nix build #flux-screensaver-windows
 ```
 
-I haven’t tested native builds on Windows. You’ll need Rust and a static build of SDL2.
+There’s also a development shell.
+
+```sh
+nix develop #cross-windows
+cargo build --target x86_64-pc-windows-gnu --release
+```
+
+Native Windows builds are currently untested. You’ll need Rust and a static build of SDL2 linked at build time.
 
 
 [flux]: https://github.com/sandydoo/flux

@@ -119,8 +119,8 @@ dependencies = [
 
 [[package]]
 name = "flux"
-version = "4.1.0"
-source = "git+https://github.com/sandydoo/flux?tag=v4.1.0#93c9617ed696f02ad1a72e6fb959d55722910f36"
+version = "4.2.0"
+source = "git+https://github.com/sandydoo/flux?branch=wip/monitor-grid-support#d875faf64482930ed5a136c958ae12d409509870"
 dependencies = [
  "bytemuck",
  "crevice",
@@ -138,7 +138,7 @@ dependencies = [
 
 [[package]]
 name = "flux-screensaver-windows"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "env_logger",
  "flux",
@@ -342,6 +342,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c520e05135d6e763148b6426a837e239041653ba7becd2e538c076c738025fc"
 
 [[package]]
+name = "pkg-config"
+version = "0.3.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1df8c4ec4b0627e53bdf214615ad287367e482558cf84b109250b37464dc03ae"
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -463,6 +469,7 @@ checksum = "e3586be2cf6c0a8099a79a12b4084357aa9b3e0b0d7980e3b67aaf7a9d55f9f0"
 dependencies = [
  "cfg-if",
  "libc",
+ "pkg-config",
  "version-compare",
 ]
 
