@@ -45,7 +45,7 @@ lipo target/aarch64-apple-darwin/release/libflux.a target/x86_64-apple-darwin/re
 This repo is set up to cross-compile Windows binaries from Linux using Nix.
 
 ```sh
-nix build #flux-screensaver-windows
+nix build ./#flux-screensaver-windows
 ```
 
 There’s also a cross-compilation development shell.

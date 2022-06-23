@@ -120,7 +120,7 @@ dependencies = [
 [[package]]
 name = "flux"
 version = "4.2.0"
-source = "git+https://github.com/sandydoo/flux?branch=wip/monitor-grid-support#d875faf64482930ed5a136c958ae12d409509870"
+source = "git+https://github.com/sandydoo/flux?branch=wip/monitor-grid-support#728b4f887cd4423eedffade03dce85e9fd1ac11c"
 dependencies = [
  "bytemuck",
  "crevice",

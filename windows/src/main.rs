@@ -257,7 +257,7 @@ fn run_flux(mode: Mode) -> Result<(), String> {
                         .window("Flux", physical_width, physical_height)
                         .position(bounds.x(), bounds.y())
                         .input_grabbed()
-                        .fullscreen_desktop()
+                        .borderless()
                         .allow_highdpi()
                         .opengl()
                         .build()
