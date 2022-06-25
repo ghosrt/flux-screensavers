@@ -231,8 +231,7 @@ fn run_flux(mode: Mode) -> Result<(), String> {
                     let (physical_width, physical_height) = surface.physical_size();
 
                     log::debug!(
-                        "Display: {}\nPhysical size: {}x{}, Logical size: {}x{}, Position: {} {}, DPI: {}, Scaling: {}",
-                        surface.id,
+                        "Surface:\nPhysical size: {}x{}, Logical size: {}x{}, Position: {} {}, DPI: {}, Scaling: {}",
                         physical_width,
                         physical_height,
                         logical_width,
@@ -396,7 +395,6 @@ fn read_flags() -> Result<Mode, String> {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Surface {
-    id: i32,
     dpi: f64,
     scale_factor: f64,
     bounds: sdl2::rect::Rect,
@@ -420,7 +418,7 @@ impl Surface {
     ) -> Result<Self, String> {
         let bounds = video_subsystem.display_bounds(id)?;
         let (_, dpi, _) = video_subsystem.display_dpi(id)?;
-        Ok(Self::from_bounds(id, bounds, dpi as f64))
+        Ok(Self::from_bounds(bounds, dpi as f64))
     }
 
     pub fn from_window(
@@ -433,13 +431,12 @@ impl Surface {
         let bounds = sdl2::rect::Rect::new(x, y, width, height);
         let (_, dpi, _) = video_subsystem.display_dpi(id)?;
 
-        Ok(Self::from_bounds(id, bounds, dpi.into()))
+        Ok(Self::from_bounds(bounds, dpi.into()))
     }
 
-    fn from_bounds(id: i32, bounds: sdl2::rect::Rect, dpi: f64) -> Self {
+    fn from_bounds(bounds: sdl2::rect::Rect, dpi: f64) -> Self {
         let scale_factor = dpi / BASE_DPI;
         Surface {
-            id,
             dpi,
             scale_factor,
             bounds,
@@ -448,7 +445,6 @@ impl Surface {
 
     fn union(&self, other: Self) -> Self {
         Self {
-            id: self.id,
             dpi: self.dpi,
             scale_factor: self.scale_factor,
             bounds: self.bounds.union(other.bounds),
@@ -469,23 +465,39 @@ impl Surface {
         Ok(Surface::combine_displays(&displays))
     }
 
-    /// Combine multiple displays into a single surface, where possible.
+    /// Combine multiple displays into a single surface, where possible. This is
+    /// kind of like a scan-line algorithm. We first merge along the x-axis, and
+    /// then merge the y-axis.
+    ///
+    /// This will only combine identical displays arranged in a rectangle. It
+    /// won’t try to cover all displays if you have some weird setup.
     fn combine_displays(surfaces: &[Surface]) -> Vec<Surface> {
+        let horizontally_merged = Self::merge_edges(surfaces, |surface| {
+            (surface.bounds.top(), surface.bounds.bottom())
+        });
+        let mut fully_merged = Self::merge_edges(&horizontally_merged, |surface| {
+            (surface.bounds.left(), surface.bounds.right())
+        });
+        fully_merged.sort_by_key(|s| s.bounds.x());
+        fully_merged
+    }
+
+    fn merge_edges<T>(surfaces: &[Surface], get_edges: T) -> Vec<Surface>
+    where
+        T: Fn(&Surface) -> (i32, i32),
+    {
         use std::collections::HashMap;
 
         let mut surface_map: HashMap<(i32, i32), Surface> = HashMap::new();
         surfaces.iter().for_each(|surface| {
-            let left_edge = (surface.bounds.top(), surface.bounds.bottom());
-            let new_surface = match surface_map.get(&left_edge) {
+            let edges = get_edges(surface);
+            let new_surface = match surface_map.get(&edges) {
                 Some(existing_surface) => existing_surface.union(*surface),
                 None => *surface,
             };
-            surface_map.insert(left_edge, new_surface);
+            surface_map.insert(edges, new_surface);
         });
-
-        let mut combined_surfaces = surface_map.into_values().collect::<Vec<Surface>>();
-        combined_surfaces.sort_by_key(|s| s.bounds.x());
-        combined_surfaces
+        surface_map.into_values().collect::<Vec<Surface>>()
     }
 }
 
@@ -548,9 +560,8 @@ mod test {
 
     #[test]
     fn it_does_not_combine_two_different_displays() {
-        let display0 = Surface::from_bounds(0, Rect::new(0, 0, 3360, 2100), BASE_DPI as f64);
+        let display0 = Surface::from_bounds(Rect::new(0, 0, 3360, 2100), BASE_DPI as f64);
         let display1 = Surface::from_bounds(
-            1,
             Rect::new(display0.bounds.width() as i32, 0, 2560, 1440),
             BASE_DPI as f64,
         );
@@ -564,37 +575,36 @@ mod test {
     #[test]
     fn it_partially_combines_two_1440p_displays_and_a_separate_laptop_display() {
         // 1440p + 1440p + laptop
-        let display0 = Surface::from_bounds(0, Rect::new(-2560, 0, 2560, 1440), BASE_DPI as f64);
-        let display1 = Surface::from_bounds(1, Rect::new(0, 0, 2560, 1440), BASE_DPI as f64);
-        let display2 = Surface::from_bounds(2, Rect::new(2560, 0, 3360, 2100), BASE_DPI as f64);
+        let display0 = Surface::from_bounds(Rect::new(-2560, 0, 2560, 1440), BASE_DPI as f64);
+        let display1 = Surface::from_bounds(Rect::new(0, 0, 2560, 1440), BASE_DPI as f64);
+        let display2 = Surface::from_bounds(Rect::new(2560, 0, 3360, 2100), BASE_DPI as f64);
 
         assert_eq!(
             Surface::combine_displays(&[display0, display1, display2]),
             vec![
-                Surface::from_bounds(0, Rect::new(-2560, 0, 5120, 1440), BASE_DPI as f64),
+                Surface::from_bounds(Rect::new(-2560, 0, 5120, 1440), BASE_DPI as f64),
                 display2
             ]
         );
 
         // laptop + 1440p + 1440p
-        let display2 = Surface::from_bounds(2, Rect::new(-1920, 360, 1920, 1080), BASE_DPI as f64);
-        let display0 = Surface::from_bounds(0, Rect::new(0, 0, 2560, 1440), BASE_DPI as f64);
-        let display1 = Surface::from_bounds(1, Rect::new(2560, 0, 2560, 1440), BASE_DPI as f64);
+        let display2 = Surface::from_bounds(Rect::new(-1920, 360, 1920, 1080), BASE_DPI as f64);
+        let display0 = Surface::from_bounds(Rect::new(0, 0, 2560, 1440), BASE_DPI as f64);
+        let display1 = Surface::from_bounds(Rect::new(2560, 0, 2560, 1440), BASE_DPI as f64);
 
         assert_eq!(
             Surface::combine_displays(&[display2, display0, display1]),
             vec![
                 display2,
-                Surface::from_bounds(0, Rect::new(0, 0, 5120, 1440), BASE_DPI as f64),
+                Surface::from_bounds(Rect::new(0, 0, 5120, 1440), BASE_DPI as f64),
             ]
         );
     }
 
     #[test]
     fn it_combines_two_1440p_displays() {
-        let display0 = Surface::from_bounds(0, Rect::new(0, 0, 2560, 1440), BASE_DPI as f64);
+        let display0 = Surface::from_bounds(Rect::new(0, 0, 2560, 1440), BASE_DPI as f64);
         let display1 = Surface::from_bounds(
-            1,
             Rect::new(display0.bounds.width() as i32, 0, 2560, 1440),
             BASE_DPI as f64,
         );
@@ -602,7 +612,6 @@ mod test {
         assert_eq!(
             Surface::combine_displays(&[display0, display1]),
             vec![Surface::from_bounds(
-                0,
                 Rect::new(0, 0, 5120, 1440),
                 BASE_DPI as f64
             )]
@@ -611,17 +620,41 @@ mod test {
 
     #[test]
     fn it_combines_three_1440p_displays() {
-        let display0 = Surface::from_bounds(0, Rect::new(-2560, 0, 2560, 1440), BASE_DPI as f64);
-        let display1 = Surface::from_bounds(1, Rect::new(0, 0, 2560, 1440), BASE_DPI as f64);
-        let display2 = Surface::from_bounds(2, Rect::new(2560, 0, 2560, 1440), BASE_DPI as f64);
+        let display0 = Surface::from_bounds(Rect::new(-2560, 0, 2560, 1440), BASE_DPI as f64);
+        let display1 = Surface::from_bounds(Rect::new(0, 0, 2560, 1440), BASE_DPI as f64);
+        let display2 = Surface::from_bounds(Rect::new(2560, 0, 2560, 1440), BASE_DPI as f64);
 
         assert_eq!(
             Surface::combine_displays(&[display0, display1, display2]),
             vec![Surface::from_bounds(
-                0,
                 Rect::new(-2560, 0, 2560 * 3, 1440),
                 BASE_DPI as f64
             )]
+        );
+    }
+
+    #[test]
+    fn it_combines_a_grid_of_displays() {
+        let display0 = Surface::from_bounds(Rect::new(0, 0, 2560, 1440), BASE_DPI as f64);
+        let display1 = Surface::from_bounds(Rect::new(2560, 0, 2560, 1440), BASE_DPI as f64);
+        let display2 = Surface::from_bounds(Rect::new(0, 1440, 2560, 1440), BASE_DPI as f64);
+        let display3 = Surface::from_bounds(Rect::new(2560, 1440, 2560, 1440), BASE_DPI as f64);
+
+        assert_eq!(
+            Surface::combine_displays(&[display0, display1, display2, display3]),
+            vec![Surface::from_bounds(
+                Rect::new(0, 0, 2560 * 2, 1440 * 2),
+                BASE_DPI as f64
+            ),]
+        );
+
+        let laptop = Surface::from_bounds(Rect::new(2560 * 2, 0, 1920, 1080), BASE_DPI as f64);
+        assert_eq!(
+            Surface::combine_displays(&[display0, display1, display2, display3, laptop]),
+            vec![
+                Surface::from_bounds(Rect::new(0, 0, 2560 * 2, 1440 * 2), BASE_DPI as f64),
+                laptop
+            ]
         );
     }
 }
