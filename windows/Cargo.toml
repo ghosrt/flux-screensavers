@@ -1,7 +1,7 @@
 [package]
 name = "flux-screensaver-windows"
 version = "1.2.0"
-description = "An ode to the macOS Drift screensaver"
+description = "An open-source tribute to the macOS Drift screensaver"
 authors = ["Sander Melnikov <hey@sandydoo.me"]
 repository = "https://github.com/sandydoo/flux-screensavers/"
 edition = "2021"
@@ -27,7 +27,7 @@ sdl2-sys = "0.35.2"
 [dependencies.flux]
 version = "4"
 git = "https://github.com/sandydoo/flux"
-branch = "wip/monitor-grid-support"
+tag = "v4.3.0"
 
 [target.'cfg(not(windows))'.dependencies.sdl2]
 version = "0.35.2"
