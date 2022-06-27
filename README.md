@@ -13,7 +13,7 @@ I’m working on creating native screensavers for [Flux][flux] — a fluid simul
 
 This repository contains:
 
-- `flux-ffi` — a C-style foreign function interface for the [Flux library][flux].
+- `flux-ffi` — a foreign function interface for the [Flux library][flux].
 - Native screensavers for the following platforms:
   - [MacOS](#macos)
   - [Windows](#windows)
@@ -48,10 +48,11 @@ This repo is set up to cross-compile Windows binaries from Linux using Nix.
 nix build #flux-screensaver-windows
 ```
 
-There’s also a development shell.
+There’s also a cross-compilation development shell.
 
 ```sh
-nix develop #cross-windows
+nix develop ./#cross-windows
+cd windows
 cargo build --target x86_64-pc-windows-gnu --release
 ```
 
