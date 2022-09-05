@@ -47,15 +47,16 @@
         packages = {
           default = let
             SDL2_static = pkgs.SDL2.overrideAttrs (old: rec {
-              version = "2.0.22";
+              version = "2.24.0";
               name = "SDL2-static-${version}";
               src = builtins.fetchurl {
                 url =
                   "https://www.libsdl.org/release/${old.pname}-${version}.tar.gz";
                 sha256 =
-                  "sha256:0bkzd5h7kn4xmd93hpbla4n2f82nb35s0xcs4p3kybl84wqvyz7y";
+                  "sha256:15vd9najhjh6s9z9hhx7zp51iby690a1g3h7kcwjvyb82x5w7r4i";
               };
               dontDisableStatic = true;
+              patches = [ ./nix/find-headers.patch ];
             });
           in naersk-lib.buildPackage rec {
             name = "flux-screensaver-windows";
@@ -75,15 +76,16 @@
           flux-screensaver-windows = let
             inherit (pkgs.pkgsCross) mingwW64;
             SDL2_static = pkgs.pkgsCross.mingwW64.SDL2.overrideAttrs (old: rec {
-              version = "2.0.22";
+              version = "2.24.0";
               name = "SDL2-static-${version}";
               src = builtins.fetchurl {
                 url =
                   "https://www.libsdl.org/release/${old.pname}-${version}.tar.gz";
                 sha256 =
-                  "sha256:0bkzd5h7kn4xmd93hpbla4n2f82nb35s0xcs4p3kybl84wqvyz7y";
+                  "sha256:15vd9najhjh6s9z9hhx7zp51iby690a1g3h7kcwjvyb82x5w7r4i";
               };
               dontDisableStatic = true;
+              patches = [ ./nix/find-headers.patch ];
             });
           in naersk-lib.buildPackage rec {
             name = "flux-screensaver-windows";
